@@ -352,16 +352,34 @@ async function syncNow(silent){
   for (var i = 0; i < pending.length; i++) {
     var l = pending[i];
     try {
+      var flds = { Title: l.date, EntryTime: l.time, Timestamp: new Date(l.ts).toISOString(),
+        Checkpoint: l.cp, Supervisor: l.sup, Vehicle: l.veh, Job: l.job, Event: l.ev };
+      if (l.wt != null) { flds.NetWeight = l.wt; flds.SlipNo = l.slip || ''; }
       var r = await fetch(GRAPH_LIST_URL, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: {
-          Title: l.date, EntryTime: l.time, Timestamp: new Date(l.ts).toISOString(),
-          Checkpoint: l.cp, Supervisor: l.sup, Vehicle: l.veh, Job: l.job, Event: l.ev
-        } })
+        body: JSON.stringify({ fields: flds })
       });
-      if (r.ok) { l.synced = true; ok++; } else { fail++; }
+      if (r.ok) {
+        try { var d = await r.json(); l.spId = d.id; } catch(e2) {}
+        l.synced = true;
+        if (l.wt != null) l.wtSynced = true;
+        ok++;
+      } else { fail++; }
     } catch(e) { fail++; break; } // network gone — stop, retry later
+  }
+  // push weights added later to already-synced entries
+  var wtPending = logs.filter(function(x){ return x.synced && x.spId && x.wt != null && !x.wtSynced; });
+  for (var j = 0; j < wtPending.length; j++) {
+    var w = wtPending[j];
+    try {
+      var pr = await fetch(GRAPH_LIST_URL + '/' + w.spId + '/fields', {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ NetWeight: w.wt, SlipNo: w.slip || '' })
+      });
+      if (pr.ok) { w.wtSynced = true; ok++; } else { fail++; }
+    } catch(e) { fail++; break; }
   }
   set(LS.log, logs);
   syncing = false;
@@ -380,79 +398,51 @@ function renderLog(){
   tl.forEach(function(l){
     var idx = logs.indexOf(l);
     var r = document.createElement('div'); r.className='logrow';
+    var wtHtml = l.wt != null
+      ? '<span class="pill wtbtn" data-i="'+idx+'" style="background:#e8f5e9;color:var(--green)">⚖ '+l.wt+' Te</span>'
+      : '<span class="pill wtbtn" data-i="'+idx+'" style="background:#fff3e0;color:var(--amber)">⚖ + वज़न</span>';
     r.innerHTML = '<span class="t">'+l.time+'</span><span class="ev '+l.ev+'">'+l.ev+'</span>'
       + '<span>'+l.veh+'</span><span style="color:var(--muted);font-size:12px">'+l.job+'</span>'
+      + wtHtml
       + '<span class="del" data-i="'+idx+'">✕</span>';
     r.querySelector('.del').onclick = function(){
       if (confirm('Delete this entry? / यह एंट्री हटाएं?')) { logs.splice(+this.dataset.i,1); set(LS.log,logs); renderLog(); }
     };
+    r.querySelector('.wtbtn').onclick = function(){ addWeight(+this.dataset.i); };
     el.appendChild(r);
   });
+}
+
+// deferred weighbridge entry — supervisors add weight when they get the slip
+function addWeight(idx){
+  var l = logs[idx];
+  if (!l) return;
+  var wIn = prompt('Net Weight in Te / नेट वज़न (टन में)\n' + l.veh + ' · ' + l.ev + ' @ ' + l.time
+    + (l.wt != null ? '\nCurrent: ' + l.wt + ' Te' : ''), l.wt != null ? l.wt : '');
+  if (wIn === null) return;
+  var w = parseFloat(String(wIn).replace(',','.'));
+  if (isNaN(w) || w <= 0 || w > 100) { alert('Enter a valid weight in Te / सही वज़न डालें'); return; }
+  var s = prompt('Weighbridge Slip No. (optional) / स्लिप नंबर', l.slip || '');
+  if (s === null) s = l.slip || '';
+  if (!confirm('Confirm weight? / वज़न पक्का करें?\n\n' + l.veh + '\n' + w + ' Te' + (s ? '\nSlip: ' + s : ''))) return;
+  l.wt = w; l.slip = s.trim(); l.wtSynced = false;
+  set(LS.log, logs);
+  renderLog();
+  syncNow(true);
 }
 
 function shareWhatsApp(){
   var tl = todayLogs();
   if (!tl.length) { alert('No entries / कोई एंट्री नहीं'); return; }
   var txt = '*'+cfg.cp+'* — '+today()+'\nSupervisor: '+cfg.sup+'\n\n';
-  tl.forEach(function(l){ txt += l.time+' | '+l.veh+' | '+l.ev+' | '+l.job+'\n'; });
-  txt += '\nTotal entries: '+tl.length;
+  tl.forEach(function(l){ txt += l.time+' | '+l.veh+' | '+l.ev+' | '+l.job+(l.wt!=null?' | '+l.wt+' Te'+(l.slip?' (Slip '+l.slip+')':''):'')+'\n'; });
+  var totWt = tl.reduce(function(a,l){ return a + (l.wt||0); }, 0);
+  txt += '\nTotal entries: '+tl.length + (totWt ? '\nTotal weight: '+totWt.toFixed(2)+' Te' : '');
   window.open('https://wa.me/?text='+encodeURIComponent(txt));
 }
 
 function exportCSV(){
   if (!logs.length) { alert('No data'); return; }
-  var csv = 'Date,Time,Checkpoint,Supervisor,Vehicle,Job,Event\n';
-  logs.forEach(function(l){ csv += [l.date,l.time,l.cp,l.sup,l.veh,l.job,l.ev].join(',')+'\n'; });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = 'trip_log_'+cfg.cp.replace(/ /g,'_')+'_'+today().replace(/\//g,'-')+'.csv';
-  a.click();
-}
-
-function addVehicle(){
-  var n = prompt('Vehicle number (e.g. MH34AB1234) / गाड़ी नंबर:');
-  if (!n) return;
-  n = n.trim().toUpperCase().replace(/\s+/g,'');
-  var j = confirm('OK = Job 1 (Dhoptala→CHP)\nCancel = Job 2 (CHP→Ballarpur)') ? 'Job 1' : 'Job 2';
-  vehicles.push({num:n, job:j}); set(LS.veh, vehicles);
-  renderMain(); if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
-}
-
-function renderSet(){
-  document.getElementById('setInfo').innerHTML =
-    '<b>Supervisor:</b> '+cfg.sup+'<br><b>Checkpoint:</b> '+cfg.cp+'<br><b>Total logged entries:</b> '+logs.length;
-  var pend = logs.filter(function(l){ return !l.synced; }).length;
-  var user = signedInUser();
-  document.getElementById('syncStat').innerHTML = !authConfigured()
-    ? '⚠️ Sync not configured (Client ID missing) — entries stay on phone only'
-    : (user
-        ? ('👤 ' + user + '<br>' + (pend ? '⏳ <b>'+pend+'</b> entries pending sync' : '✅ All entries synced'))
-        : '⚠️ Not signed in — entries stay on phone until sign-in');
-  document.getElementById('signInBtn').style.display = user ? 'none' : 'block';
-  var vm = document.getElementById('vehManage'); vm.innerHTML='';
-  vehicles.forEach(function(v,i){
-    var d = document.createElement('div'); d.className='logrow';
-    d.innerHTML = '<span style="font-weight:700">'+v.num+'</span><span class="pill">'+v.job+'</span>'
-      + '<span class="del" data-i="'+i+'">✕</span>';
-    d.querySelector('.del').onclick = function(){
-      if (confirm('Remove '+v.num+'? / हटाएं?')) { vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); }
-    };
-    vm.appendChild(d);
-  });
-}
-
-function clearOld(){
-  var cut = Date.now() - 7*24*3600*1000;
-  var before = logs.length;
-  logs = logs.filter(function(l){ return l.ts >= cut; });
-  set(LS.log, logs);
-  alert((before-logs.length)+' old entries removed / पुरानी एंट्री हटाई गईं');
-}
-
-// refresh "minutes ago" every minute
-setInterval(function(){ if (cfg && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
-
-if (cfg) boot();
-</script>
-</body>
-</html>
+  var csv = 'Date,Time,Checkpoint,Supervisor,Vehicle,Job,Event,NetWeight,SlipNo\n';
+  logs.forEach(function(l){ csv += [l.date,l.time,l.cp,l.sup,l.veh,l.job,l.ev,(l.wt!=null?l.wt:''),(l.slip||'')].join(',')+'\n'; });
+  var a = 
