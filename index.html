@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Vehicle Trip Logger — Mohd Aamir Transport</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js"></script>
+<style>
+  :root {
+    --blue:#1a3c6e; --green:#2e7d32; --red:#c62828; --amber:#ef6c00;
+    --bg:#f4f6f9; --card:#fff; --text:#1c2733; --muted:#6b7a8c;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',Roboto,Arial,sans-serif; font-size:16px; }
+  .hdr { background:var(--blue); color:#fff; padding:12px 14px; position:sticky; top:0; z-index:10; }
+  .hdr h1 { margin:0; font-size:17px; }
+  .hdr .sub { font-size:12px; opacity:.85; margin-top:2px; }
+  .wrap { padding:12px; max-width:520px; margin:0 auto; padding-bottom:90px; }
+  .card { background:var(--card); border-radius:12px; padding:14px; margin-bottom:12px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  label { font-size:13px; color:var(--muted); display:block; margin:10px 0 4px; }
+  select,input[type=text] { width:100%; padding:12px; font-size:16px; border:1.5px solid #cfd8e3;
+    border-radius:8px; background:#fff; }
+  .btn { display:block; width:100%; padding:14px; font-size:17px; font-weight:600; border:none;
+    border-radius:10px; color:#fff; background:var(--blue); margin-top:12px; cursor:pointer; }
+  .btn:active { opacity:.8; }
+  .btn.green { background:var(--green); } .btn.red { background:var(--red); }
+  .btn.ghost { background:#e6ecf3; color:var(--blue); }
+  .veh-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .veh { background:var(--card); border-radius:12px; padding:12px 10px; text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); border:2.5px solid transparent; cursor:pointer; }
+  .veh.in { border-color:var(--green); background:#e8f5e9; }
+  .veh.out { border-color:#cfd8e3; }
+  .veh .num { font-size:17px; font-weight:700; letter-spacing:.5px; }
+  .veh .job { font-size:11px; color:var(--muted); margin-top:2px; }
+  .veh .st { font-size:13px; font-weight:600; margin-top:6px; }
+  .veh.in .st { color:var(--green); } .veh.out .st { color:var(--muted); }
+  .veh .since { font-size:11px; color:var(--muted); }
+  .veh .trips { margin-top:6px; font-size:12px; background:var(--blue); color:#fff;
+    border-radius:20px; display:inline-block; padding:2px 10px; }
+  .tabs { position:fixed; bottom:0; left:0; right:0; background:#fff; display:flex;
+    border-top:1px solid #dde5ee; z-index:10; }
+  .tab { flex:1; text-align:center; padding:10px 4px 12px; font-size:12.5px; color:var(--muted); cursor:pointer; }
+  .tab.act { color:var(--blue); font-weight:700; }
+  .tab .ico { font-size:20px; display:block; }
+  .logrow { display:flex; align-items:center; gap:8px; padding:10px 4px; border-bottom:1px solid #edf1f6; font-size:14px; }
+  .logrow .t { color:var(--muted); font-size:12.5px; min-width:52px; }
+  .logrow .ev { font-weight:700; min-width:44px; }
+  .logrow .ev.IN { color:var(--green); } .logrow .ev.OUT { color:var(--red); }
+  .logrow .del { margin-left:auto; color:var(--red); font-size:18px; padding:4px 8px; cursor:pointer; }
+  .pill { font-size:12px; background:#e6ecf3; color:var(--blue); border-radius:20px; padding:3px 10px;
+    display:inline-block; margin:2px 4px 2px 0; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
+    align-items:flex-end; z-index:20; }
+  .modal.show { display:flex; }
+  .sheet { background:#fff; width:100%; border-radius:18px 18px 0 0; padding:18px; max-width:520px; margin:0 auto; }
+  .sheet h3 { margin:0 0 4px; font-size:18px; }
+  .sheet .subt { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .bigbtns { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  .bigbtn { padding:26px 10px; font-size:20px; font-weight:800; border:none; border-radius:14px; color:#fff; cursor:pointer; }
+  .stat { display:flex; gap:10px; }
+  .stat .box { flex:1; background:var(--card); border-radius:12px; padding:12px; text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .stat .n { font-size:24px; font-weight:800; color:var(--blue); }
+  .stat .l { font-size:11.5px; color:var(--muted); }
+  .hidden { display:none; }
+  h2.sec { font-size:15px; margin:16px 2px 8px; color:var(--blue); }
+  .warn { font-size:12.5px; color:var(--amber); margin-top:8px; }
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1 id="hdrTitle">Vehicle Trip Logger</h1>
+  <div class="sub" id="hdrSub">M/s Mohd Aamir Transport — WCL Ballarpur Area</div>
+</div>
+
+<!-- SETUP -->
+<div class="wrap" id="pgSetup">
+  <div class="card">
+    <h3 style="margin-top:0">Setup / सेटअप</h3>
+    <label>Supervisor Name / सुपरवाइज़र का नाम</label>
+    <select id="supSel">
+      <option value="">-- Select / चुनें --</option>
+      <option>Yashpal Bhagat</option>
+      <option>Karan Dubey</option>
+      <option>Parvez Sheikh</option>
+      <option>Balaji Yelmol</option>
+      <option>Sachin Ade</option>
+      <option value="__other">Other / अन्य</option>
+    </select>
+    <input type="text" id="supOther" class="hidden" placeholder="Type name / नाम लिखें" style="margin-top:8px">
+    <label>Your Checkpoint / आपका चेकपॉइंट</label>
+    <select id="cpSel">
+      <option value="">-- Select / चुनें --</option>
+      <option value="Dhoptala Stock Yard">Dhoptala Stock Yard — Job 1 Loading / धोपटाला स्टॉक यार्ड</option>
+      <option value="Sasti CHP">Sasti CHP Bunker 33/48 — Job 1 Unload + Job 2 Load / सास्ती सीएचपी</option>
+      <option value="Ballarpur Rly Siding">Ballarpur Railway Siding — Job 2 Unloading / बल्लारपुर रेलवे साइडिंग</option>
+    </select>
+    <button class="btn" onclick="saveSetup()">Start / शुरू करें ▶</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="wrap hidden" id="pgMain">
+  <div class="stat">
+    <div class="box"><div class="n" id="stIn">0</div><div class="l">Inside now / अभी अंदर</div></div>
+    <div class="box"><div class="n" id="stTrips">0</div><div class="l">Today's entries / आज की एंट्री</div></div>
+    <div class="box"><div class="n" id="stVeh">0</div><div class="l">Vehicles / गाड़ियां</div></div>
+  </div>
+  <h2 class="sec">Tap vehicle to log IN/OUT / गाड़ी पर टैप करें</h2>
+  <div class="veh-grid" id="vehGrid"></div>
+  <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
+</div>
+
+<!-- LOG -->
+<div class="wrap hidden" id="pgLog">
+  <h2 class="sec">Today's Log / आज का लॉग</h2>
+  <div class="card" id="logList"></div>
+  <button class="btn green" onclick="shareWhatsApp()">📤 Share on WhatsApp / व्हाट्सएप पर भेजें</button>
+  <button class="btn" onclick="exportCSV()">⬇ Download CSV / सीएसवी डाउनलोड</button>
+  <div class="warn">Share the log at every shift end / हर शिफ्ट के अंत में लॉग भेजें</div>
+</div>
+
+<!-- SETTINGS -->
+<div class="wrap hidden" id="pgSet">
+  <div class="card">
+    <h3 style="margin-top:0">Settings / सेटिंग</h3>
+    <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
+    <button class="btn ghost" onclick="editSetup()">Change supervisor / checkpoint बदलें</button>
+    <button class="btn red" onclick="clearOld()">🗑 Clear logs older than 7 days / पुराना लॉग हटाएं</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">SharePoint Sync / शेयरपॉइंट सिंक</h3>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:6px">
+      Entries save on phone first, then auto-sync to the WCL Transportation SharePoint (VehicleTripLog list). Sign in once with your Microsoft account.
+    </div>
+    <div style="font-size:14px;margin-top:10px" id="syncStat"></div>
+    <button class="btn" id="signInBtn" onclick="signIn()">🔑 Sign in with Microsoft / माइक्रोसॉफ्ट साइन इन</button>
+    <button class="btn green" onclick="syncNow()">🔄 Sync Now / अभी सिंक करें</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Vehicles / गाड़ियां</h3>
+    <div id="vehManage"></div>
+    <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs" id="tabBar" style="display:none">
+  <div class="tab act" id="tabMain" onclick="showTab('Main')"><span class="ico">🚛</span>Vehicles<br>गाड़ियां</div>
+  <div class="tab" id="tabLog" onclick="showTab('Log')"><span class="ico">📋</span>Log<br>लॉग</div>
+  <div class="tab" id="tabSet" onclick="showTab('Set')"><span class="ico">⚙️</span>Settings<br>सेटिंग</div>
+</div>
+
+<!-- IN/OUT MODAL -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3 id="mVeh">MH34 --- ----</h3>
+    <div class="subt" id="mInfo"></div>
+    <div class="bigbtns">
+      <button class="bigbtn" style="background:var(--green)" onclick="logEvent('IN')">⬇ IN<br><span style="font-size:14px;font-weight:600">गाड़ी अंदर आई</span></button>
+      <button class="bigbtn" style="background:var(--red)" onclick="logEvent('OUT')">⬆ OUT<br><span style="font-size:14px;font-weight:600">गाड़ी बाहर गई</span></button>
+    </div>
+    <button class="btn ghost" onclick="closeModal()">Cancel / रद्द करें</button>
+  </div>
+</div>
+
+<script>
+var LS = { cfg:'vt_cfg', veh:'vt_vehicles', log:'vt_logs' };
+function get(k,d){ try{ return JSON.parse(localStorage.getItem(k)) || d; }catch(e){ return d; } }
+function set(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+
+var cfg = get(LS.cfg, null);
+var vehicles = get(LS.veh, null);
+var logs = get(LS.log, []);
+var selVeh = null;
+
+// Approved tippers per WCL letters No. 538 & 539 dt. 06/07/26 (Sub Area Manager, Dhoptala OCM)
+var FLEET_VER = '2';
+if (!vehicles || localStorage.getItem('vt_fleetver') !== FLEET_VER) {
+  var job1 = ['MH34BZ0480','MH34BZ0481','MH34BG1627','MH34CQ5343','MH34CQ5443','MH34CQ5543','MH34CQ5643','MH34CQ5743'];
+  var job2 = ['MH34BZ5070','MH34BZ5072','MH34BG5146','MH34BG5147','MH34BG5148','MH34BG7886','MH34BG5343','MH34BZ8043','MH34BZ8143','MH34BZ8243','MH34BZ8343','MH34BZ8443','MH34BZ8543'];
+  var fleet = [];
+  job1.forEach(function(n){ fleet.push({num:n, job:'Job 1'}); });
+  job2.forEach(function(n){ fleet.push({num:n, job:'Job 2'}); });
+  // keep any real vehicle numbers the supervisor added manually (drop old placeholders)
+  (vehicles || []).forEach(function(v){
+    var isPlaceholder = /^JOB[12]-V\d+$/.test(v.num);
+    var exists = fleet.some(function(f){ return f.num === v.num; });
+    if (!isPlaceholder && !exists) fleet.push(v);
+  });
+  vehicles = fleet;
+  set(LS.veh, vehicles);
+  localStorage.setItem('vt_fleetver', FLEET_VER);
+}
+
+document.getElementById('supSel').addEventListener('change', function(){
+  document.getElementById('supOther').classList.toggle('hidden', this.value !== '__other');
+});
+
+function saveSetup(){
+  var s = document.getElementById('supSel').value;
+  if (s === '__other') s = document.getElementById('supOther').value.trim();
+  var c = document.getElementById('cpSel').value;
+  if (!s || !c) { alert('Please select name and checkpoint / नाम और चेकपॉइंट चुनें'); return; }
+  cfg = { sup:s, cp:c };
+  set(LS.cfg, cfg);
+  boot();
+}
+function editSetup(){
+  document.getElementById('pgSetup').classList.remove('hidden');
+  ['pgMain','pgLog','pgSet'].forEach(function(p){ document.getElementById(p).classList.add('hidden'); });
+  document.getElementById('tabBar').style.display='none';
+}
+function boot(){
+  if (!cfg) return;
+  document.getElementById('pgSetup').classList.add('hidden');
+  document.getElementById('tabBar').style.display='flex';
+  document.getElementById('hdrTitle').textContent = cfg.cp;
+  document.getElementById('hdrSub').textContent = cfg.sup + ' — Mohd Aamir Transport';
+  showTab('Main');
+}
+function showTab(t){
+  ['Main','Log','Set'].forEach(function(x){
+    document.getElementById('pg'+x).classList.toggle('hidden', x!==t);
+    document.getElementById('tab'+x).classList.toggle('act', x===t);
+  });
+  if (t==='Main') renderMain();
+  if (t==='Log') renderLog();
+  if (t==='Set') renderSet();
+}
+
+function today(){ return new Date().toLocaleDateString('en-IN'); }
+function nowT(){ return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
+function todayLogs(){ var d=today(); return logs.filter(function(l){ return l.date===d && l.cp===cfg.cp; }); }
+function lastEvent(v){
+  var tl = todayLogs().filter(function(l){ return l.veh===v; });
+  return tl.length ? tl[tl.length-1] : null;
+}
+function mins(ts){
+  var m = Math.round((Date.now()-ts)/60000);
+  if (m<60) return m+' min';
+  return Math.floor(m/60)+'h '+(m%60)+'m';
+}
+
+function renderMain(){
+  var g = document.getElementById('vehGrid'); g.innerHTML='';
+  var inCount=0;
+  vehicles.forEach(function(v){
+    var le = lastEvent(v.num);
+    var isIn = le && le.ev==='IN';
+    if (isIn) inCount++;
+    var trips = todayLogs().filter(function(l){ return l.veh===v.num && l.ev==='IN'; }).length;
+    var d = document.createElement('div');
+    d.className = 'veh ' + (isIn?'in':'out');
+    d.innerHTML = '<div class="num">'+v.num+'</div><div class="job">'+v.job+'</div>'
+      + '<div class="st">'+(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—'))+'</div>'
+      + (le ? '<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>' : '<div class="since">No entry today</div>')
+      + '<div class="trips">'+trips+' visits today</div>';
+    d.onclick = function(){ openModal(v); };
+    g.appendChild(d);
+  });
+  document.getElementById('stIn').textContent = inCount;
+  document.getElementById('stTrips').textContent = todayLogs().length;
+  document.getElementById('stVeh').textContent = vehicles.length;
+}
+
+function openModal(v){
+  selVeh = v;
+  document.getElementById('mVeh').textContent = v.num + '  ('+v.job+')';
+  var le = lastEvent(v.num);
+  document.getElementById('mInfo').textContent = le
+    ? 'Last: '+le.ev+' at '+le.time+' — '+mins(le.ts)+' ago'
+    : 'No entry today / आज कोई एंट्री नहीं';
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+
+function logEvent(ev){
+  var le = lastEvent(selVeh.num);
+  if (le && le.ev===ev) {
+    if (!confirm('Last entry was also '+ev+'. Log again? / पिछली एंट्री भी '+ev+' थी। फिर से?')) return;
+  }
+  // confirmation before saving
+  if (!confirm('Confirm entry? / एंट्री पक्की करें?\n\n'
+      + selVeh.num + '\n' + ev + (ev==='IN' ? ' (गाड़ी अंदर)' : ' (गाड़ी बाहर)')
+      + '\n' + nowT() + ' — ' + cfg.cp)) return;
+  logs.push({ date:today(), time:nowT(), ts:Date.now(), cp:cfg.cp, sup:cfg.sup,
+    veh:selVeh.num, job:selVeh.job, ev:ev, synced:false });
+  set(LS.log, logs);
+  closeModal(); renderMain();
+  syncNow(true); // push to SharePoint in background if URL configured
+}
+
+// ---- SharePoint sync via Microsoft Graph (same pattern as Dolly ERP) ----
+// PASTE the Client ID from the dolly-erp Azure AD app registration (same as in dolly-erp index.html):
+var AAD_CLIENT_ID = '218ae300-7a39-48f1-ad89-bbadca020b29';
+var AAD_TENANT    = 'e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2'; // oregenesis tenant
+var GRAPH_LIST_URL = 'https://graph.microsoft.com/v1.0/sites/oregenesis.sharepoint.com:/sites/WCLTransportation:/lists/VehicleTripLog/items';
+var GRAPH_SCOPES = ['Sites.ReadWrite.All','User.Read'];
+
+var msalApp = null;
+function authConfigured(){ return AAD_CLIENT_ID.indexOf('__') === -1 && typeof msal !== 'undefined'; }
+
+async function initAuth(){
+  if (!authConfigured()) return;
+  msalApp = new msal.PublicClientApplication({
+    auth: { clientId: AAD_CLIENT_ID,
+            authority: 'https://login.microsoftonline.com/' + AAD_TENANT,
+            redirectUri: window.location.origin + window.location.pathname },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msalApp.initialize();
+  try {
+    var resp = await msalApp.handleRedirectPromise();
+    var acct = (resp && resp.account) || msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
+    if (acct) { msalApp.setActiveAccount(acct); syncNow(true); }
+  } catch(e) { console.log('auth redirect error', e); }
+  if (typeof renderSet === 'function' && !document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+}
+
+function signIn(){
+  if (!authConfigured()) { alert('Sync not configured yet (Client ID missing) / अभी कॉन्फ़िगर नहीं हुआ'); return; }
+  msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
+}
+function signedInUser(){
+  if (!msalApp) return null;
+  var a = msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
+  return a ? (a.name || a.username) : null;
+}
+async function getToken(){
+  var acct = msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
+  if (!acct) return null;
+  try {
+    var r = await msalApp.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: acct });
+    return r.accessToken;
+  } catch(e) { return null; }
+}
+
+var syncing = false;
+async function syncNow(silent){
+  if (!authConfigured()) { if(!silent) alert('Sync not configured yet / सिंक कॉन्फ़िगर नहीं हुआ'); return; }
+  if (syncing) return;
+  var pending = logs.filter(function(l){ return !l.synced; });
+  if (!pending.length) { if(!silent) alert('All entries synced ✓ / सब सिंक हो गया'); return; }
+  var token = await getToken();
+  if (!token) { if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
+  syncing = true;
+  var ok = 0, fail = 0;
+  for (var i = 0; i < pending.length; i++) {
+    var l = pending[i];
+    try {
+      var r = await fetch(GRAPH_LIST_URL, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: {
+          Title: l.date, EntryTime: l.time, Timestamp: new Date(l.ts).toISOString(),
+          Checkpoint: l.cp, Supervisor: l.sup, Vehicle: l.veh, Job: l.job, Event: l.ev
+        } })
+      });
+      if (r.ok) { l.synced = true; ok++; } else { fail++; }
+    } catch(e) { fail++; break; } // network gone — stop, retry later
+  }
+  set(LS.log, logs);
+  syncing = false;
+  if (!silent) alert(ok + ' entries synced ✓' + (fail ? (' · ' + fail + ' failed, will retry') : ''));
+  if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+}
+// auto-retry pending sync every 3 minutes
+setInterval(function(){ syncNow(true); }, 180000);
+initAuth();
+
+function renderLog(){
+  var el = document.getElementById('logList');
+  var tl = todayLogs().slice().reverse();
+  if (!tl.length) { el.innerHTML = '<div style="color:var(--muted);padding:10px">No entries yet / अभी कोई एंट्री नहीं</div>'; return; }
+  el.innerHTML = '';
+  tl.forEach(function(l){
+    var idx = logs.indexOf(l);
+    var r = document.createElement('div'); r.className='logrow';
+    r.innerHTML = '<span class="t">'+l.time+'</span><span class="ev '+l.ev+'">'+l.ev+'</span>'
+      + '<span>'+l.veh+'</span><span style="color:var(--muted);font-size:12px">'+l.job+'</span>'
+      + '<span class="del" data-i="'+idx+'">✕</span>';
+    r.querySelector('.del').onclick = function(){
+      if (confirm('Delete this entry? / यह एंट्री हटाएं?')) { logs.splice(+this.dataset.i,1); set(LS.log,logs); renderLog(); }
+    };
+    el.appendChild(r);
+  });
+}
+
+function shareWhatsApp(){
+  var tl = todayLogs();
+  if (!tl.length) { alert('No entries / कोई एंट्री नहीं'); return; }
+  var txt = '*'+cfg.cp+'* — '+today()+'\nSupervisor: '+cfg.sup+'\n\n';
+  tl.forEach(function(l){ txt += l.time+' | '+l.veh+' | '+l.ev+' | '+l.job+'\n'; });
+  txt += '\nTotal entries: '+tl.length;
+  window.open('https://wa.me/?text='+encodeURIComponent(txt));
+}
+
+function exportCSV(){
+  if (!logs.length) { alert('No data'); return; }
+  var csv = 'Date,Time,Checkpoint,Supervisor,Vehicle,Job,Event\n';
+  logs.forEach(function(l){ csv += [l.date,l.time,l.cp,l.sup,l.veh,l.job,l.ev].join(',')+'\n'; });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'trip_log_'+cfg.cp.replace(/ /g,'_')+'_'+today().replace(/\//g,'-')+'.csv';
+  a.click();
+}
+
+function addVehicle(){
+  var n = prompt('Vehicle number (e.g. MH34AB1234) / गाड़ी नंबर:');
+  if (!n) return;
+  n = n.trim().toUpperCase().replace(/\s+/g,'');
+  var j = confirm('OK = Job 1 (Dhoptala→CHP)\nCancel = Job 2 (CHP→Ballarpur)') ? 'Job 1' : 'Job 2';
+  vehicles.push({num:n, job:j}); set(LS.veh, vehicles);
+  renderMain(); if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+}
+
+function renderSet(){
+  document.getElementById('setInfo').innerHTML =
+    '<b>Supervisor:</b> '+cfg.sup+'<br><b>Checkpoint:</b> '+cfg.cp+'<br><b>Total logged entries:</b> '+logs.length;
+  var pend = logs.filter(function(l){ return !l.synced; }).length;
+  var user = signedInUser();
+  document.getElementById('syncStat').innerHTML = !authConfigured()
+    ? '⚠️ Sync not configured (Client ID missing) — entries stay on phone only'
+    : (user
+        ? ('👤 ' + user + '<br>' + (pend ? '⏳ <b>'+pend+'</b> entries pending sync' : '✅ All entries synced'))
+        : '⚠️ Not signed in — entries stay on phone until sign-in');
+  document.getElementById('signInBtn').style.display = user ? 'none' : 'block';
+  var vm = document.getElementById('vehManage'); vm.innerHTML='';
+  vehicles.forEach(function(v,i){
+    var d = document.createElement('div'); d.className='logrow';
+    d.innerHTML = '<span style="font-weight:700">'+v.num+'</span><span class="pill">'+v.job+'</span>'
+      + '<span class="del" data-i="'+i+'">✕</span>';
+    d.querySelector('.del').onclick = function(){
+      if (confirm('Remove '+v.num+'? / हटाएं?')) { vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); }
+    };
+    vm.appendChild(d);
+  });
+}
+
+function clearOld(){
+  var cut = Date.now() - 7*24*3600*1000;
+  var before = logs.length;
+  logs = logs.filter(function(l){ return l.ts >= cut; });
+  set(LS.log, logs);
+  alert((before-logs.length)+' old entries removed / पुरानी एंट्री हटाई गईं');
+}
+
+// refresh "minutes ago" every minute
+setInterval(function(){ if (cfg && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
+
+if (cfg) boot();
+</script>
+</body>
+</html>
