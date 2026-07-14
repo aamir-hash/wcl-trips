@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Vehicle Trip Logger — Mohd Aamir Transport</title>
+<script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js"></script>
+<style>
+  :root {
+    --blue:#1a3c6e; --green:#2e7d32; --red:#c62828; --amber:#ef6c00;
+    --bg:#f4f6f9; --card:#fff; --text:#1c2733; --muted:#6b7a8c;
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; padding:0; background:var(--bg); color:var(--text);
+    font-family:'Segoe UI',Roboto,Arial,sans-serif; font-size:16px; }
+  .hdr { background:var(--blue); color:#fff; padding:12px 14px; position:sticky; top:0; z-index:10; }
+  .hdr h1 { margin:0; font-size:17px; }
+  .hdr .sub { font-size:12px; opacity:.85; margin-top:2px; }
+  .wrap { padding:12px; max-width:520px; margin:0 auto; padding-bottom:90px; }
+  .card { background:var(--card); border-radius:12px; padding:14px; margin-bottom:12px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  label { font-size:13px; color:var(--muted); display:block; margin:10px 0 4px; }
+  select,input[type=text] { width:100%; padding:12px; font-size:16px; border:1.5px solid #cfd8e3;
+    border-radius:8px; background:#fff; }
+  .btn { display:block; width:100%; padding:14px; font-size:17px; font-weight:600; border:none;
+    border-radius:10px; color:#fff; background:var(--blue); margin-top:12px; cursor:pointer; }
+  .btn:active { opacity:.8; }
+  .btn.green { background:var(--green); } .btn.red { background:var(--red); }
+  .btn.ghost { background:#e6ecf3; color:var(--blue); }
+  .veh-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .veh { background:var(--card); border-radius:12px; padding:12px 10px; text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); border:2.5px solid transparent; cursor:pointer; }
+  .veh.in { border-color:var(--green); background:#e8f5e9; }
+  .veh.out { border-color:#cfd8e3; }
+  .veh .num { font-size:17px; font-weight:700; letter-spacing:.5px; }
+  .veh .job { font-size:11px; color:var(--muted); margin-top:2px; }
+  .veh .st { font-size:13px; font-weight:600; margin-top:6px; }
+  .veh.in .st { color:var(--green); } .veh.out .st { color:var(--muted); }
+  .veh .since { font-size:11px; color:var(--muted); }
+  .veh .trips { margin-top:6px; font-size:12px; background:var(--blue); color:#fff;
+    border-radius:20px; display:inline-block; padding:2px 10px; }
+  .tabs { position:fixed; bottom:0; left:0; right:0; background:#fff; display:flex;
+    border-top:1px solid #dde5ee; z-index:10; }
+  .tab { flex:1; text-align:center; padding:10px 4px 12px; font-size:12.5px; color:var(--muted); cursor:pointer; }
+  .tab.act { color:var(--blue); font-weight:700; }
+  .tab .ico { font-size:20px; display:block; }
+  .logrow { display:flex; align-items:center; gap:8px; padding:10px 4px; border-bottom:1px solid #edf1f6; font-size:14px; }
+  .logrow .t { color:var(--muted); font-size:12.5px; min-width:52px; }
+  .logrow .ev { font-weight:700; min-width:44px; }
+  .logrow .ev.IN { color:var(--green); } .logrow .ev.OUT { color:var(--red); }
+  .logrow .del { margin-left:auto; color:var(--red); font-size:18px; padding:4px 8px; cursor:pointer; }
+  .pill { font-size:12px; background:#e6ecf3; color:var(--blue); border-radius:20px; padding:3px 10px;
+    display:inline-block; margin:2px 4px 2px 0; }
+  .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
+    align-items:flex-end; z-index:20; }
+  .modal.show { display:flex; }
+  .sheet { background:#fff; width:100%; border-radius:18px 18px 0 0; padding:18px; max-width:520px; margin:0 auto; }
+  .sheet h3 { margin:0 0 4px; font-size:18px; }
+  .sheet .subt { color:var(--muted); font-size:13px; margin-bottom:8px; }
+  .bigbtns { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
+  .bigbtn { padding:26px 10px; font-size:20px; font-weight:800; border:none; border-radius:14px; color:#fff; cursor:pointer; }
+  .stat { display:flex; gap:10px; }
+  .stat .box { flex:1; background:var(--card); border-radius:12px; padding:12px; text-align:center;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); }
+  .stat .n { font-size:24px; font-weight:800; color:var(--blue); }
+  .stat .l { font-size:11.5px; color:var(--muted); }
+  .hidden { display:none; }
+  h2.sec { font-size:15px; margin:16px 2px 8px; color:var(--blue); }
+  .warn { font-size:12.5px; color:var(--amber); margin-top:8px; }
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <h1 id="hdrTitle">Vehicle Trip Logger</h1>
+  <div class="sub" id="hdrSub">M/s Mohd Aamir Transport — WCL Ballarpur Area</div>
+</div>
+
+<!-- SETUP -->
+<div class="wrap" id="pgSetup">
+  <div class="card">
+    <h3 style="margin-top:0">Setup / सेटअप</h3>
+    <label>Supervisor Name / सुपरवाइज़र का नाम</label>
+    <select id="supSel">
+      <option value="">-- Select / चुनें --</option>
+      <option>Yashpal Bhagat</option>
+      <option>Karan Dubey</option>
+      <option>Parvez Sheikh</option>
+      <option>Balaji Yelmol</option>
+      <option>Sachin Ade</option>
+      <option value="__other">Other / अन्य</option>
+    </select>
+    <input type="text" id="supOther" class="hidden" placeholder="Type name / नाम लिखें" style="margin-top:8px">
+    <label>Your Checkpoint / आपका चेकपॉइंट</label>
+    <select id="cpSel">
+      <option value="">-- Select / चुनें --</option>
+      <option value="Dhoptala Stock Yard">Dhoptala Stock Yard — Job 1 Loading / धोपटाला स्टॉक यार्ड</option>
+      <option value="Sasti CHP">Sasti CHP Bunker 33/48 — Job 1 Unload + Job 2 Load / सास्ती सीएचपी</option>
+      <option value="Ballarpur Rly Siding">Ballarpur Railway Siding — Job 2 Unloading / बल्लारपुर रेलवे साइडिंग</option>
+    </select>
+    <label>Set PIN (4–6 digits) / पिन बनाएं</label>
+    <input type="password" id="pinSet" inputmode="numeric" maxlength="6" placeholder="e.g. 4321">
+    <label>Confirm PIN / पिन दोबारा डालें</label>
+    <input type="password" id="pinSet2" inputmode="numeric" maxlength="6" placeholder="same PIN">
+    <div style="font-size:12px;color:var(--muted);margin-top:6px">⚠ This phone will be locked to the selected supervisor &amp; checkpoint. PIN needed to open the app or change setup. / यह फ़ोन इसी सुपरवाइज़र और चेकपॉइंट से लॉक हो जाएगा।</div>
+    <button class="btn" onclick="saveSetup()">Start / शुरू करें ▶</button>
+  </div>
+</div>
+
+<!-- PIN LOCK -->
+<div class="modal" id="pinLock" style="align-items:center;background:var(--blue)">
+  <div class="sheet" style="border-radius:18px;max-width:340px;text-align:center">
+    <h3>🔒 Enter PIN / पिन डालें</h3>
+    <div class="subt" id="pinWho"></div>
+    <input type="password" id="pinIn" inputmode="numeric" maxlength="6"
+      style="width:100%;padding:14px;font-size:26px;text-align:center;letter-spacing:10px;border:1.5px solid #cfd8e3;border-radius:10px">
+    <div id="pinErr" style="color:var(--red);font-size:13px;margin-top:6px;min-height:18px"></div>
+    <button class="btn" onclick="tryUnlock()">Unlock / खोलें</button>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="wrap hidden" id="pgMain">
+  <div class="stat">
+    <div class="box"><div class="n" id="stIn">0</div><div class="l">Inside now / अभी अंदर</div></div>
+    <div class="box"><div class="n" id="stTrips">0</div><div class="l">Today's entries / आज की एंट्री</div></div>
+    <div class="box"><div class="n" id="stWt" style="color:var(--amber)">0</div><div class="l">Weights pending / वज़न बाकी</div></div>
+  </div>
+  <h2 class="sec">Tap vehicle to log IN/OUT / गाड़ी पर टैप करें</h2>
+  <div class="veh-grid" id="vehGrid"></div>
+  <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
+</div>
+
+<!-- LOG -->
+<div class="wrap hidden" id="pgLog">
+  <h2 class="sec">Today's Log / आज का लॉग</h2>
+  <div class="card" id="logList"></div>
+  <button class="btn green" onclick="shareWhatsApp()">📤 Share on WhatsApp / व्हाट्सएप पर भेजें</button>
+  <button class="btn" onclick="exportCSV()">⬇ Download CSV / सीएसवी डाउनलोड</button>
+  <div class="warn">Share the log at every shift end / हर शिफ्ट के अंत में लॉग भेजें</div>
+</div>
+
+<!-- SETTINGS -->
+<div class="wrap hidden" id="pgSet">
+  <div class="card">
+    <h3 style="margin-top:0">Settings / सेटिंग</h3>
+    <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
+    <button class="btn ghost" onclick="editSetup()">Change supervisor / checkpoint बदलें</button>
+    <button class="btn red" onclick="clearOld()">🗑 Clear logs older than 7 days / पुराना लॉग हटाएं</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">SharePoint Sync / शेयरपॉइंट सिंक</h3>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:6px">
+      Entries save on phone first, then auto-sync to the WCL Transportation SharePoint (VehicleTripLog list). Sign in once with your Microsoft account.
+    </div>
+    <div style="font-size:14px;margin-top:10px" id="syncStat"></div>
+    <button class="btn" id="signInBtn" onclick="signIn()">🔑 Sign in with Microsoft / माइक्रोसॉफ्ट साइन इन</button>
+    <button class="btn green" onclick="syncNow()">🔄 Sync Now / अभी सिंक करें</button>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Vehicles / गाड़ियां</h3>
+    <div id="vehManage"></div>
+    <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div class="wrap hidden" id="pgDash">
+  <h2 class="sec">Daily Target Dashboard / दैनिक लक्ष्य</h2>
+  <div id="dashBody"><div class="card" style="color:var(--muted)">Loading… / लोड हो रहा है…</div></div>
+  <button class="btn" onclick="renderDash(true)">🔄 Refresh / रीफ्रेश</button>
+</div>
+
+<!-- TABS -->
+<div class="tabs" id="tabBar" style="display:none">
+  <div class="tab act" id="tabMain" onclick="showTab('Main')"><span class="ico">🚛</span>Vehicles<br>गाड़ियां</div>
+  <div class="tab" id="tabLog" onclick="showTab('Log')"><span class="ico">📋</span>Log<br>लॉग</div>
+  <div class="tab" id="tabDash" onclick="showTab('Dash')"><span class="ico">🎯</span>Target<br>लक्ष्य</div>
+  <div class="tab" id="tabSet" onclick="showTab('Set')"><span class="ico">⚙️</span>Settings<br>सेटिंग</div>
+</div>
+
+<!-- IN/OUT MODAL -->
+<div class="modal" id="modal">
+  <div class="sheet">
+    <h3 id="mVeh">MH34 --- ----</h3>
+    <div class="subt" id="mInfo"></div>
+    <div class="bigbtns">
+      <button class="bigbtn" id="btnIn" style="background:var(--green)" onclick="logEvent('IN')">⬇ IN<br><span style="font-size:14px;font-weight:600">गाड़ी अंदर आई</span></button>
+      <button class="bigbtn" id="btnOut" style="background:var(--red)" onclick="logEvent('OUT')">⬆ OUT<br><span style="font-size:14px;font-weight:600">गाड़ी बाहर गई</span></button>
+    </div>
+    <button class="btn ghost" onclick="closeModal()">Cancel / रद्द करें</button>
+  </div>
+</div>
+
+<script>
+var LS = { cfg:'vt_cfg', veh:'vt_vehicles', log:'vt_logs' };
+function get(k,d){ try{ return JSON.parse(localStorage.getItem(k)) || d; }catch(e){ return d; } }
+function set(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
+
+var cfg = get(LS.cfg, null);
+var vehicles = get(LS.veh, null);
+var logs = get(LS.log, []);
+var selVeh = null;
+
+// one-time wipe of stale/test entries (data version bump)
+var DATA_VER = '2';
+if (localStorage.getItem('vt_dataver') !== DATA_VER) {
+  logs = []; set(LS.log, logs);
+  localStorage.setItem('vt_dataver', DATA_VER);
+}
+
+// simple PIN hash (djb2)
+function pinHash(s){ var h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return 'h'+(h>>>0); }
+function tryUnlock(){
+  var p = document.getElementById('pinIn').value.trim();
+  if (cfg && pinHash(p) === cfg.pinH) {
+    document.getElementById('pinLock').classList.remove('show');
+    document.getElementById('pinIn').value='';
+    document.getElementById('pinErr').textContent='';
+  } else {
+    document.getElementById('pinErr').textContent = 'Wrong PIN / गलत पिन';
+    document.getElementById('pinIn').value='';
+  }
+}
+
+// Approved tippers per WCL letters No. 538 & 539 dt. 06/07/26 (Sub Area Manager, Dhoptala OCM)
+var FLEET_VER = '2';
+if (!vehicles || localStorage.getItem('vt_fleetver') !== FLEET_VER) {
+  var job1 = ['MH34BZ0480','MH34BZ0481','MH34BG1627','MH34CQ5343','MH34CQ5443','MH34CQ5543','MH34CQ5643','MH34CQ5743'];
+  var job2 = ['MH34BZ5070','MH34BZ5072','MH34BG5146','MH34BG5147','MH34BG5148','MH34BG7886','MH34BG5343','MH34BZ8043','MH34BZ8143','MH34BZ8243','MH34BZ8343','MH34BZ8443','MH34BZ8543'];
+  var fleet = [];
+  job1.forEach(function(n){ fleet.push({num:n, job:'Job 1'}); });
+  job2.forEach(function(n){ fleet.push({num:n, job:'Job 2'}); });
+  // keep any real vehicle numbers the supervisor added manually (drop old placeholders)
+  (vehicles || []).forEach(function(v){
+    var isPlaceholder = /^JOB[12]-V\d+$/.test(v.num);
+    var exists = fleet.some(function(f){ return f.num === v.num; });
+    if (!isPlaceholder && !exists) fleet.push(v);
+  });
+  vehicles = fleet;
+  set(LS.veh, vehicles);
+  localStorage.setItem('vt_fleetver', FLEET_VER);
+}
+
+document.getElementById('supSel').addEventListener('change', function(){
+  document.getElementById('supOther').classList.toggle('hidden', this.value !== '__other');
+});
+
+function saveSetup(){
+  var s = document.getElementById('supSel').value;
+  if (s === '__other') s = document.getElementById('supOther').value.trim();
+  var c = document.getElementById('cpSel').value;
+  if (!s || !c) { alert('Please select name and checkpoint / नाम और चेकपॉइंट चुनें'); return; }
+  var p1 = document.getElementById('pinSet').value.trim();
+  var p2 = document.getElementById('pinSet2').value.trim();
+  if (!/^\d{4,6}$/.test(p1)) { alert('PIN must be 4–6 digits / पिन 4–6 अंकों का हो'); return; }
+  if (p1 !== p2) { alert('PINs do not match / पिन मेल नहीं खाते'); return; }
+  cfg = { sup:s, cp:c, pinH: pinHash(p1) };
+  set(LS.cfg, cfg);
+  boot(true); // fresh setup — already authenticated, skip lock once
+}
+function editSetup(){
+  // checkpoint is locked to this supervisor — PIN required to change
+  if (cfg && cfg.pinH) {
+    var p = prompt('Enter PIN to change setup / सेटअप बदलने के लिए पिन डालें:');
+    if (p === null) return;
+    if (pinHash(p.trim()) !== cfg.pinH) { alert('Wrong PIN / गलत पिन'); return; }
+  }
+  document.getElementById('pgSetup').classList.remove('hidden');
+  ['pgMain','pgLog','pgSet'].forEach(function(p2){ document.getElementById(p2).classList.add('hidden'); });
+  document.getElementById('tabBar').style.display='none';
+}
+function boot(skipLock){
+  if (!cfg) return;
+  if (!cfg.pinH) { editSetupForce(); return; } // old install without PIN — must re-setup
+  document.getElementById('pgSetup').classList.add('hidden');
+  document.getElementById('tabBar').style.display='flex';
+  document.getElementById('hdrTitle').textContent = cfg.cp;
+  document.getElementById('hdrSub').textContent = cfg.sup + ' — Mohd Aamir Transport';
+  showTab('Main');
+  if (!skipLock) {
+    document.getElementById('pinWho').textContent = cfg.sup + ' — ' + cfg.cp;
+    document.getElementById('pinLock').classList.add('show');
+  }
+}
+function editSetupForce(){
+  document.getElementById('pgSetup').classList.remove('hidden');
+  ['pgMain','pgLog','pgSet'].forEach(function(p){ document.getElementById(p).classList.add('hidden'); });
+  document.getElementById('tabBar').style.display='none';
+}
+function showTab(t){
+  ['Main','Log','Dash','Set'].forEach(function(x){
+    document.getElementById('pg'+x).classList.toggle('hidden', x!==t);
+    document.getElementById('tab'+x).classList.toggle('act', x===t);
+  });
+  if (t==='Main') renderMain();
+  if (t==='Log') renderLog();
+  if (t==='Dash') renderDash();
+  if (t==='Set') renderSet();
+}
+
+function today(){ return new Date().toLocaleDateString('en-IN'); }
+function nowT(){ return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
+function todayLogs(){ var d=today(); return logs.filter(function(l){ return l.date===d && l.cp===cfg.cp; }); }
+function lastEvent(v){
+  var tl = todayLogs().filter(function(l){ return l.veh===v; });
+  return tl.length ? tl[tl.length-1] : null;
+}
+function mins(ts){
+  var m = Math.round((Date.now()-ts)/60000);
+  if (m<60) return m+' min';
+  return Math.floor(m/60)+'h '+(m%60)+'m';
+}
+
+function renderMain(){
+  var g = document.getElementById('vehGrid'); g.innerHTML='';
+  var inCount=0;
+  vehicles.forEach(function(v){
+    var le = lastEvent(v.num);
+    var isIn = le && le.ev==='IN';
+    if (isIn) inCount++;
+    var trips = todayLogs().filter(function(l){ return l.veh===v.num && l.ev==='IN'; }).length;
+    var d = document.createElement('div');
+    d.className = 'veh ' + (isIn?'in':'out');
+    d.innerHTML = '<div class="num">'+v.num+'</div><div class="job">'+v.job+'</div>'
+      + '<div class="st">'+(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—'))+'</div>'
+      + (le ? '<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>' : '<div class="since">No entry today</div>')
+      + '<div class="trips">'+trips+' visits today</div>';
+    d.onclick = function(){ openModal(v); };
+    g.appendChild(d);
+  });
+  document.getElementById('stIn').textContent = inCount;
+  document.getElementById('stTrips').textContent = todayLogs().length;
+  document.getElementById('stWt').textContent = todayLogs().filter(function(l){ return l.ev === 'OUT' && l.wt == null; }).length;
+}
+
+function openModal(v){
+  selVeh = v;
+  document.getElementById('mVeh').textContent = v.num + '  ('+v.job+')';
+  var le = lastEvent(v.num);
+  document.getElementById('mInfo').textContent = le
+    ? 'Last: '+le.ev+' at '+le.time+' — '+mins(le.ts)+' ago'
+    : 'No entry today / आज कोई एंट्री नहीं';
+  // strict alternation: disable the event that would repeat
+  var bi = document.getElementById('btnIn'), bo = document.getElementById('btnOut');
+  bi.disabled = !!(le && le.ev === 'IN');
+  bo.disabled = !!(le && le.ev === 'OUT');
+  bi.style.opacity = bi.disabled ? '.35' : '1';
+  bo.style.opacity = bo.disabled ? '.35' : '1';
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+
+function logEvent(ev){
+  var le = lastEvent(selVeh.num);
+  // hard block: a vehicle that is IN must go OUT first (and vice versa)
+  if (le && le.ev===ev) {
+    alert(ev==='IN'
+      ? 'BLOCKED: '+selVeh.num+' is already IN since '+le.time+'. It must go OUT first.\nगाड़ी पहले से अंदर है ('+le.time+' से)। पहले OUT करें।'
+      : 'BLOCKED: '+selVeh.num+' already went OUT at '+le.time+'. It must come IN first.\nगाड़ी पहले ही बाहर जा चुकी है ('+le.time+')। पहले IN करें।');
+    return;
+  }
+  // confirmation before saving
+  if (!confirm('Confirm entry? / एंट्री पक्की करें?\n\n'
+      + selVeh.num + '\n' + ev + (ev==='IN' ? ' (गाड़ी अंदर)' : ' (गाड़ी बाहर)')
+      + '\n' + nowT() + ' — ' + cfg.cp)) return;
+  logs.push({ date:today(), time:nowT(), ts:Date.now(), cp:cfg.cp, sup:cfg.sup,
+    veh:selVeh.num, job:selVeh.job, ev:ev, synced:false });
+  set(LS.log, logs);
+  closeModal(); renderMain();
+  syncNow(true); // push to SharePoint in background if URL configured
+}
+
+// ---- SharePoint sync via Microsoft Graph (same pattern as Dolly ERP) ----
+// PASTE the Client ID from the dolly-erp Azure AD app registration (same as in dolly-erp index.html):
+var AAD_CLIENT_ID = '218ae300-7a39-48f1-ad89-bbadca020b29';
+var AAD_TENANT    = 'e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2'; // oregenesis tenant
+var GRAPH_LIST_URL = 'https://graph.microsoft.com/v1.0/sites/oregenesis.sharepoint.com:/sites/WCLTransportation:/lists/VehicleTripLog/items';
+var GRAPH_SCOPES = ['Sites.ReadWrite.All','User.Read'];
+
+var msalApp = null;
+function authConfigured(){ return AAD_CLIENT_ID.indexOf('__') === -1 && typeof msal !== 'undefined'; }
+
+async function initAuth(){
+  if (!authConfigured()) return;
+  msalApp = new msal.PublicClientApplication({
+    auth: { clientId: AAD_CLIENT_ID,
+            authority: 'https://login.microsoftonline.com/' + AAD_TENANT,
+            redirectUri: window.location.origin + window.location.pathname },
+    cache: { cacheLocation: 'localStorage' }
+  });
+  await msalApp.initialize();
+  try {
+    var resp = await msalApp.handleRedirectPromise();
+    var acct = (resp && resp.account) || msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
+    if (acct) { msalApp.setActiveAccount(acct); syncNow(true); }
+  } catch(e) { console.log('auth redirect error', e); }
+  if (typeof renderSet === 'function' && !document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+}
+
+function signIn(){
+  if (!authConfigured()) { alert('Sync not configured yet (Client ID missing) / अभी कॉन्फ़िगर नहीं हुआ'); return; }
+  msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
+}
+function signedInUser(){
+  if (!msalApp) return null;
+  var a = msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
+  return a ? (a.name || a.username) : null;
+}
+async function getToken(){
+  var acct = msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
+  if (!acct) return null;
+  try {
+    var r = await msalApp.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: acct });
+    return r.accessToken;
+  } catch(e) { return null; }
+}
+
+var syncing = false;
+async function syncNow(silent){
+  if (!authConfigured()) { if(!silent) alert('Sync not configured yet / सिंक कॉन्फ़िगर नहीं हुआ'); return; }
+  if (syncing) return;
+  var pending = logs.filter(function(l){ return !l.synced; });
+  if (!pending.length) { if(!silent) alert('All entries synced ✓ / सब सिंक हो गया'); return; }
+  var token = await getToken();
+  if (!token) { if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
+  syncing = true;
+  var ok = 0, fail = 0;
+  for (var i = 0; i < pending.length; i++) {
+    var l = pending[i];
+    try {
+      var flds = { Title: l.date, EntryTime: l.time, Timestamp: new Date(l.ts).toISOString(),
+        Checkpoint: l.cp, Supervisor: l.sup, Vehicle: l.veh, Job: l.job, Event: l.ev };
+      if (l.wt != null) { flds.NetWeight = l.wt; flds.SlipNo = l.slip || ''; }
+      var r = await fetch(GRAPH_LIST_URL, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields: flds })
+      });
+      if (r.ok) {
+        try { var d = await r.json(); l.spId = d.id; } catch(e2) {}
+        l.synced = true;
+        if (l.wt != null) l.wtSynced = true;
+        ok++;
+      } else { fail++; }
+    } catch(e) { fail++; break; } // network gone — stop, retry later
+  }
+  // push weights added later to already-synced entries
+  var wtPending = logs.filter(function(x){ return x.synced && x.spId && x.wt != null && !x.wtSynced; });
+  for (var j = 0; j < wtPending.length; j++) {
+    var w = wtPending[j];
+    try {
+      var pr = await fetch(GRAPH_LIST_URL + '/' + w.spId + '/fields', {
+        method: 'PATCH',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ NetWeight: w.wt, SlipNo: w.slip || '' })
+      });
+      if (pr.ok) { w.wtSynced = true; ok++; } else { fail++; }
+    } catch(e) { fail++; break; }
+  }
+  set(LS.log, logs);
+  syncing = false;
+  if (!silent) alert(ok + ' entries synced ✓' + (fail ? (' · ' + fail + ' failed, will retry') : ''));
+  if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+}
+// auto-retry pending sync every 3 minutes
+setInterval(function(){ syncNow(true); }, 180000);
+initAuth();
+
+// ---- Daily Target Dashboard ----
+// Tonnage = loaded OUT weights at the loading checkpoint of each job.
+var DAILY_TARGET = 2700;
+var JOB_DEF = [
+  { job:'Job 1', label:'Job 1 · DOCM → SOCM',            loadCp:'Dhoptala Stock Yard', start:'2026-07-08' },
+  { job:'Job 2', label:'Job 2 · SOCM → Ballarpur Siding', loadCp:'Sasti CHP',           start:'2026-07-09' }
+];
+function istDate(x){ return new Date(x).toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' }); }
+function dayCount(startStr, todayStr){
+  return Math.floor((new Date(todayStr+'T00:00:00Z') - new Date(startStr+'T00:00:00Z'))/86400000) + 1;
+}
+var dashCache = null, dashAt = 0;
+async function fetchAllItems(){
+  var token = await getToken();
+  if (!token) return null;
+  var url = GRAPH_LIST_URL + '?$expand=fields($select=Title,Timestamp,Checkpoint,Vehicle,Job,Event,NetWeight)&$top=999';
+  var items = [], guard = 0;
+  while (url && guard < 40) {
+    var r = await fetch(url, { headers:{ 'Authorization':'Bearer '+token } });
+    if (!r.ok) throw new Error('Graph '+r.status);
+    var d = await r.json();
+    (d.value||[]).forEach(function(it){ if (it.fields) items.push(it.fields); });
+    url = d['@odata.nextLink'] || null;
+    guard++;
+  }
+  return items;
+}
+function fmtT(n){ return (Math.round(n*100)/100).toLocaleString('en-IN'); }
+async function renderDash(force){
+  var el = document.getElementById('dashBody');
+  if (!authConfigured() || !signedInUser()) {
+    el.innerHTML = '<div class="card" style="color:var(--amber)">⚠️ Sign in first (Settings) to load data from SharePoint / पहले साइन इन करें</div>';
+    return;
+  }
+  if (!dashCache || force || Date.now()-dashAt > 120000) {
+    el.innerHTML = '<div class="card" style="color:var(--muted)">Loading from SharePoint… / लोड हो रहा है…</div>';
+    try { dashCache = await fetchAllItems(); dashAt = Date.now(); }
+    catch(e){ el.innerHTML = '<div class="card" style="color:var(--red)">Could not load data ('+e.message+'). Check network & sign-in.</div>'; return; }
+  }
+  if (!dashCache) { el.innerHTML = '<div class="card" style="color:var(--amber)">Sign in required / साइन इन करें</div>'; return; }
+  var todayStr = istDate(Date.now());
+  var html = '';
+  JOB_DEF.forEach(function(J){
+    // per-day tonnage & trips from loaded OUTs at the job's loading point
+    var byDay = {}, tripsByDay = {};
+    dashCache.forEach(function(f){
+      if (f.Job !== J.job || f.Event !== 'OUT' || f.Checkpoint !== J.loadCp) return;
+      var d = f.Timestamp ? istDate(f.Timestamp) : f.Title;
+      if (!d || d < J.start) return;
+      tripsByDay[d] = (tripsByDay[d]||0) + 1;
+      var w = parseFloat(f.NetWeight);
+      if (!isNaN(w) && w > 0) byDay[d] = (byDay[d]||0) + w;
+    });
+    var days = dayCount(J.start, todayStr);
+    if (days < 1) days = 0;
+    var cumTarget = days * DAILY_TARGET;
+    var cumAch = 0, todayTe = byDay[todayStr] || 0;
+    Object.keys(byDay).forEach(function(d){ if (d <= todayStr) cumAch += byDay[d]; });
+    var shortfall = cumTarget - cumAch;               // +ve = behind
+    var reqToday = Math.max(0, cumTarget - (cumAch - todayTe)); // needed today incl. backlog
+    var pct = reqToday > 0 ? Math.min(100, Math.round(todayTe / reqToday * 100)) : 100;
+    var behind = shortfall > 0.01;
+    html += '<div class="card">'
+      + '<div style="font-weight:800;color:var(--blue);font-size:15px">'+J.label+'</div>'
+      + '<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Since '+J.start.split('-').reverse().join('/')+' · Day '+days+' · Target '+DAILY_TARGET.toLocaleString('en-IN')+' Te/day</div>'
+      + '<div style="display:flex;gap:8px;text-align:center;margin-bottom:8px">'
+      +   '<div style="flex:1"><div style="font-size:20px;font-weight:800;color:var(--blue)">'+fmtT(todayTe)+'</div><div style="font-size:10.5px;color:var(--muted)">Today Te / आज</div></div>'
+      +   '<div style="flex:1"><div style="font-size:20px;font-weight:800">'+(tripsByDay[todayStr]||0)+'</div><div style="font-size:10.5px;color:var(--muted)">Trips today / ट्रिप</div></div>'
+      +   '<div style="flex:1"><div style="font-size:20px;font-weight:800;color:'+(behind?'var(--red)':'var(--green)')+'">'+fmtT(Math.abs(shortfall))+'</div><div style="font-size:10.5px;color:var(--muted)">'+(behind?'Shortfall / कमी':'Surplus / अधिक')+'</div></div>'
+      + '</div>'
+      + '<div style="font-size:12.5px;margin-bottom:4px"><b>Required today (incl. backlog): '+fmtT(reqToday)+' Te</b> / आज चाहिए</div>'
+      + '<div style="background:#e6ecf3;border-radius:8px;height:14px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(pct>=100?'var(--green)':(pct>=60?'var(--amber)':'var(--red)'))+'"></div></div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+pct+'% of today\'s requirement · Cumulative: '+fmtT(cumAch)+' / '+fmtT(cumTarget)+' Te</div>'
+      + (behind ? '<div style="margin-top:8px;font-size:12px;color:var(--red);font-weight:600">⚠️ Behind target — penalty risk. Backlog rolls into tomorrow\'s requirement. / लक्ष्य से पीछे — पेनल्टी का जोखिम</div>' : '<div style="margin-top:8px;font-size:12px;color:var(--green);font-weight:600">✅ On track / लक्ष्य पर</div>');
+    // last 7 days mini-table
+    html += '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px">'
+      + '<tr style="color:var(--muted);text-align:left"><th style="padding:3px 0">Date</th><th style="text-align:right">Trips</th><th style="text-align:right">Te</th><th style="text-align:right">±Cum</th></tr>';
+    var runCum = 0;
+    for (var i = 0; i < days; i++) {
+      var dt = new Date(new Date(J.start+'T00:00:00Z').getTime() + i*86400000);
+      var ds = dt.toISOString().slice(0,10);
+      runCum += (byDay[ds]||0) - DAILY_TARGET;
+      if (days - i > 7) continue; // show only last 7 days
+      var diff = runCum;
+      html += '<tr style="border-top:1px solid #edf1f6">'
+        + '<td style="padding:3px 0">'+ds.slice(8,10)+'/'+ds.slice(5,7)+(ds===todayStr?' •':'')+'</td>'
+        + '<td style="text-align:right">'+(tripsByDay[ds]||0)+'</td>'
+        + '<td style="text-align:right">'+fmtT(byDay[ds]||0)+'</td>'
+        + '<td style="text-align:right;color:'+(diff<0?'var(--red)':'var(--green)')+'">'+(diff<0?'−':'+')+fmtT(Math.abs(diff))+'</td></tr>';
+    }
+    html += '</table></div>';
+  });
+  html += '<div style="font-size:11px;color:var(--muted);padding:0 4px">Tonnage counts weighed OUT entries at the loading point (Job 1: Dhoptala, Job 2: Sasti CHP). Entries without weights are not counted — keep weights updated. Data refreshes from SharePoint every 2 min.</div>';
+  el.innerHTML = html;
+}
+
+function renderLog(){
+  var el = document.getElementById('logList');
+  var tl = todayLogs().slice().reverse();
+  if (!tl.length) { el.innerHTML = '<div style="color:var(--muted);padding:10px">No entries yet / अभी कोई एंट्री नहीं</div>'; return; }
+  el.innerHTML = '';
+  tl.forEach(function(l){
+    var idx = logs.indexOf(l);
+    var r = document.createElement('div'); r.className='logrow';
+    // one weight per completed visit — entered on the OUT entry only
+    var wtHtml = '';
+    if (l.ev === 'OUT') {
+      wtHtml = l.wt != null
+        ? '<span class="pill wtbtn" data-i="'+idx+'" style="background:#e8f5e9;color:var(--green)">⚖ '+l.wt+' Te</span>'
+        : '<span class="pill wtbtn" data-i="'+idx+'" style="background:#fff3e0;color:var(--amber)">⚖ + वज़न</span>';
+    }
+    r.innerHTML = '<span class="t">'+l.time+'</span><span class="ev '+l.ev+'">'+l.ev+'</span>'
+      + '<span>'+l.veh+'</span><span style="color:var(--muted);font-size:12px">'+l.job+'</span>'
+      + wtHtml
+      + '<span class="del" data-i="'+idx+'">✕</span>';
+    r.querySelector('.del').onclick = function(){
+      if (confirm('Delete this entry? / यह एंट्री हटाएं?')) { logs.splice(+this.dataset.i,1); set(LS.log,logs); renderLog(); }
+    };
+    var wb = r.querySelector('.wtbtn');
+    if (wb) wb.onclick = function(){ addWeight(+this.dataset.i); };
+    el.appendChild(r);
+  });
+}
+
+// deferred weighbridge entry — supervisors add weight when they get the slip
+function addWeight(idx){
+  var l = logs[idx];
+  if (!l) return;
+  var wIn = prompt('Net Weight in Te / नेट वज़न (टन में)\n' + l.veh + ' · ' + l.ev + ' @ ' + l.time
+    + (l.wt != null ? '\nCurrent: ' + l.wt + ' Te' : ''), l.wt != null ? l.wt : '');
+  if (wIn === null) return;
+  var w = parseFloat(String(wIn).replace(',','.'));
+  if (isNaN(w) || w <= 0 || w > 100) { alert('Enter a valid weight in Te / सही वज़न डालें'); return; }
+  var s = prompt('Weighbridge Slip No. (optional) / स्लिप नंबर', l.slip || '');
+  if (s === null) s = l.slip || '';
+  if (!confirm('Confirm weight? / वज़न पक्का करें?\n\n' + l.veh + '\n' + w + ' Te' + (s ? '\nSlip: ' + s : ''))) return;
+  l.wt = w; l.slip = s.trim(); l.wtSynced = false;
+  set(LS.log, logs);
+  renderLog();
+  syncNow(true);
+}
+
+function shareWhatsApp(){
+  var tl = todayLogs();
+  if (!tl.length) { alert('No entries / कोई एंट्री नहीं'); return; }
+  var txt = '*'+cfg.cp+'* — '+today()+'\nSupervisor: '+cfg.sup+'\n\n';
+  tl.forEach(function(l){ txt += l.time+' | '+l.veh+' | '+l.ev+' | '+l.job+(l.wt!=null?' | '+l.wt+' Te'+(l.slip?' (Slip '+l.slip+')':''):'')+'\n'; });
+  var totWt = tl.reduce(function(a,l){ return a + (l.wt||0); }, 0);
+  txt += '\nTotal entries: '+tl.length + (totWt ? '\nTotal weight: '+totWt.toFixed(2)+' Te' : '');
+  window.open('https://wa.me/?text='+encodeURIComponent(txt));
+}
+
+function exportCSV(){
+  if (!logs.length) { alert('No data'); return; }
+  var csv = 'Date,Time,Checkpoint,Supervisor,Vehicle,Job,Event,NetWeight,SlipNo\n';
+  logs.forEach(function(l){ csv += [l.date,l.time,l.cp,l.sup,l.veh,l.job,l.ev,(l.wt!=null?l.wt:''),(l.slip||'')].join(',')+'\n'; });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = 'trip_log_'+cfg.cp.replace(/ /g,'_')+'_'+today().replace(/\//g,'-')+'.csv';
+  a.click();
+}
+
+function addVehicle(){
+  var n = prompt('Vehicle number (e.g. MH34AB1234) / गाड़ी नंबर:');
+  if (!n) return;
+  n = n.trim().toUpperCase().replace(/\s+/g,'');
+  var j = confirm('OK = Job 1 (Dhoptala→CHP)\nCancel = Job 2 (CHP→Ballarpur)') ? 'Job 1' : 'Job 2';
+  vehicles.push({num:n, job:j}); set(LS.veh, vehicles);
+  renderMain(); if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+}
+
+function renderSet(){
+  document.getElementById('setInfo').innerHTML =
+    '<b>Supervisor:</b> '+cfg.sup+'<br><b>Checkpoint:</b> '+cfg.cp+'<br><b>Total logged entries:</b> '+logs.length;
+  var pend = logs.filter(function(l){ return !l.synced; }).length;
+  var user = signedInUser();
+  document.getElementById('syncStat').innerHTML = !authConfigured()
+    ? '⚠️ Sync not configured (Client ID missing) — entries stay on phone only'
+    : (user
+        ? ('👤 ' + user + '<br>' + (pend ? '⏳ <b>'+pend+'</b> entries pending sync' : '✅ All entries synced'))
+        : '⚠️ Not signed in — entries stay on phone until sign-in');
+  document.getElementById('signInBtn').style.display = user ? 'none' : 'block';
+  var vm = document.getElementById('vehManage'); vm.innerHTML='';
+  vehicles.forEach(function(v,i){
+    var d = document.createElement('div'); d.className='logrow';
+    d.innerHTML = '<span style="font-weight:700">'+v.num+'</span><span class="pill">'+v.job+'</span>'
+      + '<span class="del" data-i="'+i+'">✕</span>';
+    d.querySelector('.del').onclick = function(){
+      if (confirm('Remove '+v.num+'? / हटाएं?')) { vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); }
+    };
+    vm.appendChild(d);
+  });
+}
+
+function clearOld(){
+  var cut = Date.now() - 7*24*3600*1000;
+  var before = logs.length;
+  logs = logs.filter(function(l){ return l.ts >= cut; });
+  set(LS.log, logs);
+  alert((before-logs.length)+' old entries removed / पुरानी एंट्री हटाई गईं');
+}
+
+// refresh "minutes ago" every minute
+setInterval(function(){ if (cfg && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
+
+// Enter key unlocks PIN screen
+document.getElementById('pinIn').addEventListener('keyup', function(e){ if (e.key === 'Enter') tryUnlock(); });
+
+if (cfg) boot();
+</script>
+</body>
+</html>
