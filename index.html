@@ -309,6 +309,8 @@
     <h3 style="margin-top:0">Settings / सेटिंग</h3>
     <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
     <button class="btn ghost" onclick="editSetup()">Change role / setup बदलें</button>
+    <button class="btn red" onclick="logout()" style="margin-top:8px">🚪 Logout / लॉग आउट</button>
+    <div class="muted-note" style="margin-top:4px">Signs out of Microsoft &amp; returns to the setup screen. PIN required.</div>
     <button class="btn red" onclick="clearOld()">🗑 Clear data older than 30 days / पुराना डेटा हटाएं</button>
   </div>
   <div class="card">
@@ -517,6 +519,16 @@ function editSetup(){
     if (pinHash(p.trim())!==cfg.pinH){ alert('Wrong PIN / गलत पिन'); return; }
   }
   showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
+}
+function logout(){
+  if (cfg && cfg.pinH){ var p=prompt("Enter PIN to logout:"); if(p===null)return; if(pinHash(p.trim())!==cfg.pinH){alert("Wrong PIN");return;} }
+  var pend=(logs||[]).filter(function(l){return !l.synced;}).length;
+  if(pend>0 && !confirm(pend+" entries not yet synced. Logout anyway?")) return;
+  try{ localStorage.removeItem(LS.cfg); }catch(e){}
+  cfg=null;
+  var bar=document.getElementById("tabBar"); if(bar) bar.style.display="none";
+  try{ if(typeof msalApp!=="undefined" && msalApp){ var ac=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; if(ac){ msalApp.logoutRedirect({account:ac, postLogoutRedirectUri:window.location.origin+window.location.pathname}); return; } } }catch(e){}
+  location.reload();
 }
 function showOnly(id){
   ['pgSetup','pgMain','pgLog','pgDiesel','pgDash','pgData','pgSet'].forEach(function(p){
