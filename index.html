@@ -3,11 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Vehicle Trip Logger — Mohd Aamir Transport</title>
+<title>WCL Trip & Fuel Logger — Mohd Aamir Transport</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   :root {
-    --blue:#1a3c6e; --green:#2e7d32; --red:#c62828; --amber:#ef6c00;
+    --blue:#1a3c6e; --green:#2e7d32; --red:#c62828; --amber:#ef6c00; --purple:#6a1b9a;
     --bg:#f4f6f9; --card:#fff; --text:#1c2733; --muted:#6b7a8c;
   }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -16,37 +17,44 @@
   .hdr { background:var(--blue); color:#fff; padding:12px 14px; position:sticky; top:0; z-index:10; }
   .hdr h1 { margin:0; font-size:17px; }
   .hdr .sub { font-size:12px; opacity:.85; margin-top:2px; }
-  .wrap { padding:12px; max-width:520px; margin:0 auto; padding-bottom:90px; }
+  .wrap { padding:12px; max-width:560px; margin:0 auto; padding-bottom:90px; }
   .card { background:var(--card); border-radius:12px; padding:14px; margin-bottom:12px;
     box-shadow:0 1px 4px rgba(0,0,0,.08); }
   label { font-size:13px; color:var(--muted); display:block; margin:10px 0 4px; }
-  select,input[type=text] { width:100%; padding:12px; font-size:16px; border:1.5px solid #cfd8e3;
+  select,input[type=text],input[type=number],input[type=password],input[type=date] {
+    width:100%; padding:12px; font-size:16px; border:1.5px solid #cfd8e3;
     border-radius:8px; background:#fff; }
   .btn { display:block; width:100%; padding:14px; font-size:17px; font-weight:600; border:none;
     border-radius:10px; color:#fff; background:var(--blue); margin-top:12px; cursor:pointer; }
   .btn:active { opacity:.8; }
   .btn.green { background:var(--green); } .btn.red { background:var(--red); }
+  .btn.amber { background:var(--amber); } .btn.purple { background:var(--purple); }
   .btn.ghost { background:#e6ecf3; color:var(--blue); }
+  .btn.sm { padding:9px; font-size:14px; margin-top:8px; }
+  .jobhead { display:flex; align-items:center; gap:8px; margin:16px 2px 8px; }
+  .jobhead .dot { width:12px; height:12px; border-radius:50%; }
+  .jobhead .t { font-size:15px; font-weight:700; color:var(--blue); }
+  .jobhead .r { font-size:11.5px; color:var(--muted); }
   .veh-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .veh { background:var(--card); border-radius:12px; padding:12px 10px; text-align:center;
     box-shadow:0 1px 4px rgba(0,0,0,.08); border:2.5px solid transparent; cursor:pointer; }
   .veh.in { border-color:var(--green); background:#e8f5e9; }
   .veh.out { border-color:#cfd8e3; }
-  .veh .num { font-size:17px; font-weight:700; letter-spacing:.5px; }
-  .veh .job { font-size:11px; color:var(--muted); margin-top:2px; }
+  .veh .num { font-size:16px; font-weight:700; letter-spacing:.5px; }
   .veh .st { font-size:13px; font-weight:600; margin-top:6px; }
   .veh.in .st { color:var(--green); } .veh.out .st { color:var(--muted); }
   .veh .since { font-size:11px; color:var(--muted); }
   .veh .trips { margin-top:6px; font-size:12px; background:var(--blue); color:#fff;
     border-radius:20px; display:inline-block; padding:2px 10px; }
+  .veh .shifttrips { font-size:11px; color:var(--muted); margin-top:3px; }
   .tabs { position:fixed; bottom:0; left:0; right:0; background:#fff; display:flex;
-    border-top:1px solid #dde5ee; z-index:10; }
-  .tab { flex:1; text-align:center; padding:10px 4px 12px; font-size:12.5px; color:var(--muted); cursor:pointer; }
+    border-top:1px solid #dde5ee; z-index:10; max-width:560px; margin:0 auto; }
+  .tab { flex:1; text-align:center; padding:10px 4px 12px; font-size:12px; color:var(--muted); cursor:pointer; }
   .tab.act { color:var(--blue); font-weight:700; }
   .tab .ico { font-size:20px; display:block; }
   .logrow { display:flex; align-items:center; gap:8px; padding:10px 4px; border-bottom:1px solid #edf1f6; font-size:14px; }
-  .logrow .t { color:var(--muted); font-size:12.5px; min-width:52px; }
-  .logrow .ev { font-weight:700; min-width:44px; }
+  .logrow .t { color:var(--muted); font-size:12.5px; min-width:48px; }
+  .logrow .ev { font-weight:700; min-width:40px; }
   .logrow .ev.IN { color:var(--green); } .logrow .ev.OUT { color:var(--red); }
   .logrow .del { margin-left:auto; color:var(--red); font-size:18px; padding:4px 8px; cursor:pointer; }
   .pill { font-size:12px; background:#e6ecf3; color:var(--blue); border-radius:20px; padding:3px 10px;
@@ -54,7 +62,7 @@
   .modal { position:fixed; inset:0; background:rgba(0,0,0,.55); display:none;
     align-items:flex-end; z-index:20; }
   .modal.show { display:flex; }
-  .sheet { background:#fff; width:100%; border-radius:18px 18px 0 0; padding:18px; max-width:520px; margin:0 auto; }
+  .sheet { background:#fff; width:100%; border-radius:18px 18px 0 0; padding:18px; max-width:560px; margin:0 auto; }
   .sheet h3 { margin:0 0 4px; font-size:18px; }
   .sheet .subt { color:var(--muted); font-size:13px; margin-bottom:8px; }
   .bigbtns { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px; }
@@ -62,52 +70,111 @@
   .stat { display:flex; gap:10px; }
   .stat .box { flex:1; background:var(--card); border-radius:12px; padding:12px; text-align:center;
     box-shadow:0 1px 4px rgba(0,0,0,.08); }
-  .stat .n { font-size:24px; font-weight:800; color:var(--blue); }
-  .stat .l { font-size:11.5px; color:var(--muted); }
+  .stat .n { font-size:22px; font-weight:800; color:var(--blue); }
+  .stat .l { font-size:11px; color:var(--muted); }
   .hidden { display:none; }
   h2.sec { font-size:15px; margin:16px 2px 8px; color:var(--blue); }
   .warn { font-size:12.5px; color:var(--amber); margin-top:8px; }
+  .rolebtns { display:grid; gap:12px; margin-top:8px; }
+  .rolebtn { padding:18px; border:2px solid #cfd8e3; border-radius:14px; background:#fff; text-align:left; cursor:pointer; }
+  .rolebtn.sel { border-color:var(--blue); background:#eef3fb; }
+  .rolebtn .rt { font-size:16px; font-weight:700; }
+  .rolebtn .rd { font-size:12.5px; color:var(--muted); margin-top:2px; }
+  /* dashboard */
+  .scorecard { border-left:5px solid var(--blue); }
+  .scorecard.r2 { border-left-color:var(--purple); }
+  .scorecard.combined { border-left-color:var(--green); }
+  .sc-title { font-size:15px; font-weight:700; }
+  .sc-sub { font-size:11.5px; color:var(--muted); margin-bottom:8px; }
+  .bar { height:12px; background:#e6ecf3; border-radius:6px; overflow:hidden; margin:6px 0; }
+  .bar .fill { height:100%; background:var(--green); }
+  .bar .fill.behind { background:var(--amber); }
+  .kv { display:flex; justify-content:space-between; font-size:13.5px; padding:3px 0; }
+  .kv .k { color:var(--muted); } .kv .v { font-weight:700; }
+  .kv .v.bad { color:var(--red); } .kv .v.good { color:var(--green); }
+  table.dash { width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.dash th, table.dash td { padding:6px 5px; text-align:right; border-bottom:1px solid #edf1f6; }
+  table.dash th { color:var(--muted); font-weight:600; font-size:11px; }
+  table.dash td.l, table.dash th.l { text-align:left; }
+  .tag { font-size:10.5px; padding:1px 6px; border-radius:10px; }
+  .tag.j1 { background:#e3f2fd; color:#1565c0; } .tag.j2 { background:#f3e5f5; color:#7b1fa2; }
+  .muted-note { font-size:12px; color:var(--muted); margin:4px 0; }
 </style>
 </head>
 <body>
 
 <div class="hdr">
-  <h1 id="hdrTitle">Vehicle Trip Logger</h1>
+  <h1 id="hdrTitle">WCL Trip & Fuel Logger</h1>
   <div class="sub" id="hdrSub">M/s Mohd Aamir Transport — WCL Ballarpur Area</div>
 </div>
 
-<!-- SETUP -->
+<!-- ================= SETUP ================= -->
 <div class="wrap" id="pgSetup">
   <div class="card">
     <h3 style="margin-top:0">Setup / सेटअप</h3>
-    <label>Supervisor Name / सुपरवाइज़र का नाम</label>
-    <select id="supSel">
-      <option value="">-- Select / चुनें --</option>
-      <option>Yashpal Bhagat</option>
-      <option>Karan Dubey</option>
-      <option>Parvez Sheikh</option>
-      <option>Balaji Yelmol</option>
-      <option>Sachin Ade</option>
-      <option value="__other">Other / अन्य</option>
-    </select>
-    <input type="text" id="supOther" class="hidden" placeholder="Type name / नाम लिखें" style="margin-top:8px">
-    <label>Your Checkpoint / आपका चेकपॉइंट</label>
-    <select id="cpSel">
-      <option value="">-- Select / चुनें --</option>
-      <option value="Dhoptala Stock Yard">Dhoptala Stock Yard — Job 1 Loading / धोपटाला स्टॉक यार्ड</option>
-      <option value="Sasti CHP">Sasti CHP Bunker 33/48 — Job 1 Unload + Job 2 Load / सास्ती सीएचपी</option>
-      <option value="Ballarpur Rly Siding">Ballarpur Railway Siding — Job 2 Unloading / बल्लारपुर रेलवे साइडिंग</option>
-    </select>
-    <label>Set PIN (4–6 digits) / पिन बनाएं</label>
-    <input type="password" id="pinSet" inputmode="numeric" maxlength="6" placeholder="e.g. 4321">
-    <label>Confirm PIN / पिन दोबारा डालें</label>
-    <input type="password" id="pinSet2" inputmode="numeric" maxlength="6" placeholder="same PIN">
-    <div style="font-size:12px;color:var(--muted);margin-top:6px">⚠ This phone will be locked to the selected supervisor &amp; checkpoint. PIN needed to open the app or change setup. / यह फ़ोन इसी सुपरवाइज़र और चेकपॉइंट से लॉक हो जाएगा।</div>
-    <button class="btn" onclick="saveSetup()">Start / शुरू करें ▶</button>
+    <label>Select your role / अपनी भूमिका चुनें</label>
+    <div class="rolebtns" id="roleBtns">
+      <div class="rolebtn" data-role="SUP" onclick="pickRole('SUP')">
+        <div class="rt">🚛 Supervisor / सुपरवाइज़र</div>
+        <div class="rd">Logs vehicle IN/OUT at a checkpoint / गाड़ी की इन-आउट टाइमिंग</div>
+      </div>
+      <div class="rolebtn" data-role="DSL" onclick="pickRole('DSL')">
+        <div class="rt">⛽ Diesel Operator / डीज़ल ऑपरेटर</div>
+        <div class="rd">Logs diesel issued to vehicles & machines / डीज़ल एंट्री</div>
+      </div>
+      <div class="rolebtn" data-role="ADM" onclick="pickRole('ADM')">
+        <div class="rt">📊 Admin / एडमिन</div>
+        <div class="rd">Dashboard — targets, trips, fuel (PIN protected)</div>
+      </div>
+    </div>
+
+    <div id="supFields" class="hidden">
+      <label>Supervisor Name / सुपरवाइज़र का नाम</label>
+      <select id="supSel">
+        <option value="">-- Select / चुनें --</option>
+        <option>Yashpal Bhagat</option><option>Karan Dubey</option>
+        <option>Parvez Sheikh</option><option>Balaji Yelmol</option>
+        <option>Sachin Ade</option><option value="__other">Other / अन्य</option>
+      </select>
+      <input type="text" id="supOther" class="hidden" placeholder="Type name / नाम लिखें" style="margin-top:8px">
+      <label>Checkpoint / चेकपॉइंट</label>
+      <select id="cpSel">
+        <option value="">-- Select / चुनें --</option>
+        <option value="Dhoptala">Dhoptala Loading — Job 1 Load / धोपटाला लोडिंग</option>
+        <option value="CHP">CHP Hopper + SOCM (Sasti) — J1 Unload / J2 Load / सास्ती सीएचपी</option>
+        <option value="Siding">Ballarpur Rly Siding — Job 2 Unload / रेलवे साइडिंग</option>
+      </select>
+    </div>
+
+    <div id="dslFields" class="hidden">
+      <label>Diesel Operator Name / डीज़ल ऑपरेटर का नाम</label>
+      <input type="text" id="dslName" placeholder="Type name / नाम लिखें">
+      <label>Fuel Point / फ्यूल पॉइंट</label>
+      <select id="dslPoint">
+        <option value="">-- Select / चुनें --</option>
+        <option value="Dhoptala">Dhoptala Point / धोपटाला</option>
+        <option value="CHP">CHP / SOCM Point / सीएचपी</option>
+        <option value="Both">Both / दोनों</option>
+      </select>
+    </div>
+
+    <div id="admFields" class="hidden">
+      <div class="muted-note">Admin device — shows the dashboard only. Sign in with Microsoft to pull live data from SharePoint.</div>
+    </div>
+
+    <div id="pinBlock" class="hidden">
+      <label>Set PIN (4–6 digits) / पिन बनाएं</label>
+      <input type="password" id="pinSet" inputmode="numeric" maxlength="6" placeholder="e.g. 4321">
+      <label>Confirm PIN / पिन दोबारा डालें</label>
+      <input type="password" id="pinSet2" inputmode="numeric" maxlength="6" placeholder="same PIN">
+      <div style="font-size:12px;color:var(--muted);margin-top:6px">⚠ This phone will be locked to the selected role. PIN needed to open or change setup. / यह फ़ोन इसी भूमिका से लॉक हो जाएगा।</div>
+      <button class="btn" onclick="saveSetup()">Start / शुरू करें ▶</button>
+    </div>
+    <button class="btn ghost" style="margin-top:14px" onclick="startDemo()">🎬 View Demo with sample data</button>
   </div>
 </div>
 
-<!-- PIN LOCK -->
+<!-- ================= PIN LOCK ================= -->
 <div class="modal" id="pinLock" style="align-items:center;background:var(--blue)">
   <div class="sheet" style="border-radius:18px;max-width:340px;text-align:center">
     <h3>🔒 Enter PIN / पिन डालें</h3>
@@ -119,67 +186,146 @@
   </div>
 </div>
 
-<!-- MAIN -->
+<!-- ================= SUPERVISOR: VEHICLES ================= -->
 <div class="wrap hidden" id="pgMain">
+  <div id="demoCpBar" class="card hidden" style="padding:10px;background:#fff8e1;border:1px solid #ffe0a3">
+    <label style="margin:0 0 4px">🎬 Demo — simulate which checkpoint you are at</label>
+    <select id="demoCp" onchange="setDemoCp()">
+      <option value="Dhoptala">Dhoptala — Job 1 SOURCE (loading)</option>
+      <option value="CHP">CHP — Job 1 destination + Job 2 SOURCE</option>
+      <option value="Siding">Ballarpur Siding — Job 2 destination</option>
+    </select>
+    <div class="muted-note" style="margin-top:4px">Your IN/OUT tap is logged at this checkpoint. Whether it's source or destination depends on the vehicle's job.</div>
+  </div>
   <div class="stat">
     <div class="box"><div class="n" id="stIn">0</div><div class="l">Inside now / अभी अंदर</div></div>
-    <div class="box"><div class="n" id="stTrips">0</div><div class="l">Today's entries / आज की एंट्री</div></div>
-    <div class="box"><div class="n" id="stWt" style="color:var(--amber)">0</div><div class="l">Weights pending / वज़न बाकी</div></div>
+    <div class="box"><div class="n" id="stTrips">0</div><div class="l">Entries this shift / इस शिफ्ट</div></div>
+    <div class="box"><div class="n" id="stShift">—</div><div class="l">Current shift / शिफ्ट</div></div>
   </div>
-  <h2 class="sec">Tap vehicle to log IN/OUT / गाड़ी पर टैप करें</h2>
-  <div class="veh-grid" id="vehGrid"></div>
+  <div id="job1Sec">
+    <div class="jobhead"><span class="dot" style="background:#1565c0"></span>
+      <span><span class="t">JOB 1 — Feeding</span><br><span class="r">Dhoptala → CHP Hopper</span></span></div>
+    <div class="veh-grid" id="vehGrid1"></div>
+  </div>
+  <div id="job2Sec">
+    <div class="jobhead"><span class="dot" style="background:#7b1fa2"></span>
+      <span><span class="t">JOB 2 — Dispatch</span><br><span class="r">SOCM → Ballarpur Siding</span></span></div>
+    <div class="veh-grid" id="vehGrid2"></div>
+  </div>
   <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
 </div>
 
-<!-- LOG -->
+<!-- ================= SUPERVISOR: LOG ================= -->
 <div class="wrap hidden" id="pgLog">
-  <h2 class="sec">Today's Log / आज का लॉग</h2>
+  <h2 class="sec">This Shift's Log / इस शिफ्ट का लॉग</h2>
   <div class="card" id="logList"></div>
-  <button class="btn green" onclick="shareWhatsApp()">📤 Share on WhatsApp / व्हाट्सएप पर भेजें</button>
-  <button class="btn" onclick="exportCSV()">⬇ Download CSV / सीएसवी डाउनलोड</button>
-  <div class="warn">Share the log at every shift end / हर शिफ्ट के अंत में लॉग भेजें</div>
+  <button class="btn green" onclick="shareWhatsApp()">📤 Share on WhatsApp / व्हाट्सएप</button>
+  <button class="btn" onclick="exportCSV()">⬇ Download CSV / सीएसवी</button>
 </div>
 
-<!-- SETTINGS -->
+<!-- ================= DIESEL: ENTRY ================= -->
+<div class="wrap hidden" id="pgDiesel">
+  <div class="stat">
+    <div class="box"><div class="n" id="dLit">0</div><div class="l">Litres this shift / इस शिफ्ट लीटर</div></div>
+    <div class="box"><div class="n" id="dCnt">0</div><div class="l">Entries / एंट्री</div></div>
+    <div class="box"><div class="n" id="dShift">—</div><div class="l">Shift / शिफ्ट</div></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">⛽ New Diesel Entry / नई डीज़ल एंट्री</h3>
+    <label>Asset type / किसे डीज़ल दिया</label>
+    <select id="dType" onchange="onDType()">
+      <option value="TIPPER">Tipper / टिप्पर</option>
+      <option value="MACHINE">Machine / मशीन</option>
+    </select>
+    <label>Select asset / एसेट चुनें</label>
+    <select id="dAsset"></select>
+    <label>Diesel issued (litres) / डीज़ल (लीटर)</label>
+    <input type="number" id="dLitres" inputmode="decimal" placeholder="e.g. 45">
+    <div id="dHoursBlock" class="hidden">
+      <label id="dStartLbl">Hour-meter — Start reading / स्टार्ट रीडिंग</label>
+      <input type="number" id="dStart" inputmode="decimal" placeholder="e.g. 1579.0" oninput="updateRunNote()">
+      <label id="dStopLbl">Hour-meter — Stop reading / स्टॉप रीडिंग</label>
+      <input type="number" id="dStop" inputmode="decimal" placeholder="e.g. 1582.7" oninput="updateRunNote()">
+      <div class="muted-note" id="dRunNote">Run = Stop − Start</div>
+    </div>
+    <label>HSD slip no. (optional) / स्लिप नंबर</label>
+    <input type="text" id="dSlip" placeholder="slip / bill no">
+    <button class="btn amber" onclick="saveDiesel()">Save Entry / एंट्री सेव करें</button>
+  </div>
+  <h2 class="sec">This Shift's Diesel / इस शिफ्ट का डीज़ल</h2>
+  <div class="card" id="dieselList"></div>
+  <button class="btn" onclick="exportDieselCSV()">⬇ Download CSV / सीएसवी</button>
+</div>
+
+<!-- ================= ADMIN: DASHBOARD ================= -->
+<div class="wrap hidden" id="pgDash">
+  <div class="card">
+    <div style="display:flex;gap:8px;align-items:end">
+      <div style="flex:1">
+        <label style="margin-top:0">View date (operational day) / तारीख</label>
+        <input type="date" id="dashDate" onchange="renderDash()">
+      </div>
+      <button class="btn ghost sm" style="width:auto;margin:0" onclick="setToday()">Today</button>
+    </div>
+    <div id="dashSync" class="muted-note"></div>
+    <button class="btn sm" id="dashSignIn" onclick="signIn()">🔑 Sign in with Microsoft</button>
+    <button class="btn green sm" onclick="loadDash()">🔄 Refresh live data / रिफ्रेश</button>
+  </div>
+  <div id="dashDay"></div>
+  <h2 class="sec">📅 Month-on-Month Target / मासिक लक्ष्य</h2>
+  <div id="dashMonth"></div>
+  <h2 class="sec">📆 Quantity by Date / तारीख अनुसार वज़न</h2>
+  <div class="card" style="overflow-x:auto"><div id="dashQtyDate"></div></div>
+  <h2 class="sec">⚖ Quantity by Vehicle (selected day) / गाड़ी अनुसार</h2>
+  <div class="card" style="overflow-x:auto"><div id="dashQtyVeh"></div></div>
+  <h2 class="sec">🕒 Trip Timing (Source → Destination) / ट्रिप समय</h2>
+  <div class="card" style="overflow-x:auto"><div id="dashTiming"></div></div>
+  <h2 class="sec">🔎 Vehicle Drill-down (till date) / गाड़ी विवरण</h2>
+  <div class="card">
+    <label style="margin-top:0">Select vehicle / गाड़ी चुनें</label>
+    <select id="vehFilter" onchange="renderVehDrill()"></select>
+    <div id="dashVehDrill" style="overflow-x:auto"></div>
+  </div>
+  <h2 class="sec">🚛 Per-Vehicle (selected day) / प्रति गाड़ी</h2>
+  <div class="card" style="overflow-x:auto"><div id="dashVeh"></div></div>
+  <h2 class="sec">⛽ Fuel Averages / डीज़ल एवरेज</h2>
+  <div class="card" style="overflow-x:auto"><div id="dashFuel"></div></div>
+</div>
+
+<!-- ================= ADMIN: DATA (Excel import) ================= -->
+<div class="wrap hidden" id="pgData">
+  <div class="card">
+    <h3 style="margin-top:0">📥 Import Weighbridge Excel / वज़न एक्सेल</h3>
+    <div class="muted-note">Pick your quantity .xlsx. Columns are auto-detected; confirm the mapping, then push to SharePoint so every dashboard sees it.</div>
+    <input type="file" id="xlFile" accept=".xlsx,.xls,.csv" onchange="onXlPick(event)" style="margin-top:10px">
+    <div id="xlMap"></div>
+  </div>
+  <div id="xlPreview"></div>
+</div>
+
+<!-- ================= SETTINGS (all roles) ================= -->
 <div class="wrap hidden" id="pgSet">
   <div class="card">
     <h3 style="margin-top:0">Settings / सेटिंग</h3>
     <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
-    <button class="btn ghost" onclick="editSetup()">Change supervisor / checkpoint बदलें</button>
-    <button class="btn red" onclick="clearOld()">🗑 Clear logs older than 7 days / पुराना लॉग हटाएं</button>
+    <button class="btn ghost" onclick="editSetup()">Change role / setup बदलें</button>
+    <button class="btn red" onclick="clearOld()">🗑 Clear data older than 30 days / पुराना डेटा हटाएं</button>
   </div>
   <div class="card">
     <h3 style="margin-top:0">SharePoint Sync / शेयरपॉइंट सिंक</h3>
-    <div style="font-size:13px;color:var(--muted);margin-bottom:6px">
-      Entries save on phone first, then auto-sync to the WCL Transportation SharePoint (VehicleTripLog list). Sign in once with your Microsoft account.
-    </div>
+    <div class="muted-note">Entries save on phone first, then auto-sync to WCL Transportation SharePoint. Sign in once with your Microsoft account.</div>
     <div style="font-size:14px;margin-top:10px" id="syncStat"></div>
-    <button class="btn" id="signInBtn" onclick="signIn()">🔑 Sign in with Microsoft / माइक्रोसॉफ्ट साइन इन</button>
+    <button class="btn" id="signInBtn" onclick="signIn()">🔑 Sign in with Microsoft / साइन इन</button>
     <button class="btn green" onclick="syncNow()">🔄 Sync Now / अभी सिंक करें</button>
   </div>
-  <div class="card">
+  <div class="card" id="vehCard">
     <h3 style="margin-top:0">Vehicles / गाड़ियां</h3>
     <div id="vehManage"></div>
     <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
   </div>
 </div>
 
-<!-- DASHBOARD -->
-<div class="wrap hidden" id="pgDash">
-  <h2 class="sec">Daily Target Dashboard / दैनिक लक्ष्य</h2>
-  <div id="dashBody"><div class="card" style="color:var(--muted)">Loading… / लोड हो रहा है…</div></div>
-  <button class="btn" onclick="renderDash(true)">🔄 Refresh / रीफ्रेश</button>
-</div>
-
-<!-- TABS -->
-<div class="tabs" id="tabBar" style="display:none">
-  <div class="tab act" id="tabMain" onclick="showTab('Main')"><span class="ico">🚛</span>Vehicles<br>गाड़ियां</div>
-  <div class="tab" id="tabLog" onclick="showTab('Log')"><span class="ico">📋</span>Log<br>लॉग</div>
-  <div class="tab" id="tabDash" onclick="showTab('Dash')"><span class="ico">🎯</span>Target<br>लक्ष्य</div>
-  <div class="tab" id="tabSet" onclick="showTab('Set')"><span class="ico">⚙️</span>Settings<br>सेटिंग</div>
-</div>
-
-<!-- IN/OUT MODAL -->
+<!-- ================= IN/OUT MODAL ================= -->
 <div class="modal" id="modal">
   <div class="sheet">
     <h3 id="mVeh">MH34 --- ----</h3>
@@ -192,49 +338,105 @@
   </div>
 </div>
 
+<!-- ================= ADD VEHICLE MODAL ================= -->
+<div class="modal" id="addVehModal">
+  <div class="sheet">
+    <h3>➕ Add Vehicle / गाड़ी जोड़ें</h3>
+    <label>Vehicle number / गाड़ी नंबर</label>
+    <input type="text" id="avNum" placeholder="e.g. MH34AB1234" autocapitalize="characters">
+    <label>Job / काम</label>
+    <select id="avJob">
+      <option value="Job 1">Job 1 — Dhoptala → CHP</option>
+      <option value="Job 2">Job 2 — SOCM → Siding</option>
+    </select>
+    <button class="btn" onclick="saveNewVehicle()">Add / जोड़ें</button>
+    <button class="btn ghost" onclick="closeAddVeh()">Cancel / रद्द करें</button>
+  </div>
+</div>
+
+<!-- ================= TABS ================= -->
+<div class="tabs" id="tabBar" style="display:none"></div>
+
 <script>
-var LS = { cfg:'vt_cfg', veh:'vt_vehicles', log:'vt_logs' };
-function get(k,d){ try{ return JSON.parse(localStorage.getItem(k)) || d; }catch(e){ return d; } }
+/* =========================================================
+   CONFIG  —  edit these values to tune the app
+   ========================================================= */
+var CONFIG = {
+  ORG:  'M/s Mohd Aamir Transport',
+  AREA: 'WCL Ballarpur Area',
+  OP_START: '2026-06-08',      // date operations began (YYYY-MM-DD)
+  DAILY_TARGET_TE: 2700,       // per-route daily target in tonnes
+  // Round-trip distance per route in km (loaded out + empty back). Set real values for KMPL.
+  ROUTE_KM: { R1: 0, R2: 0 },  // 0 = "set distance" shown instead of KMPL
+  // Three shifts. Night shift (III) wraps midnight. Times are 24h "HH:MM".
+  SHIFTS: [
+    { id:'I',   label:'Shift I',   start:'07:00', end:'16:00' },
+    { id:'II',  label:'Shift II',  start:'16:00', end:'23:00' },
+    { id:'III', label:'Shift III', start:'23:00', end:'07:00' }
+  ],
+  ROUTE_LABEL: { R1:'R1 Dhoptala→CHP', R2:'R2 SOCM→Siding' },
+  // Two weighments per trip. LOADING weight is the primary figure counted against target.
+  // DESTINATION weight is the reconciliation figure (transit variance = loading - destination).
+  PRIMARY_WEIGH: 'LOAD',
+  // SharePoint list holding weighbridge / quantity rows (fallback if not using the Excel workbook).
+  QTY_LIST: 'QuantityData',
+  // LIVE quantity source: the shared SharePoint Excel workbook. The dashboard reads this via
+  // Microsoft Graph and auto-detects columns, so it updates automatically as the file is filled.
+  QTY_XLSX_URL: 'https://oregenesis.sharepoint.com/:x:/s/rpcmat/IQCETw1wRqw0SopDIRQDEaUGAX7WdGJRFANBnKnzDoGQcbQ',
+  QTY_SOURCE: 'WORKBOOK',   // 'WORKBOOK' = read the xlsx above ; 'LIST' = read QTY_LIST
+  // SharePoint site that holds the trip/diesel lists this app WRITES to.
+  SITE: 'oregenesis.sharepoint.com:/sites/rpcmat:',
+  // Dashboard auto-refresh interval (seconds) — pulls fresh data on its own.
+  DASH_REFRESH_SEC: 120
+};
+
+// Machinery fleet. unit HR = hour-meter (avg = L/hr) ; KM = odometer (avg = KMPL).
+// point/route used only for the secondary L/tonne figure — adjust if a machine sits elsewhere.
+var MACHINES = [
+  { id:'TATA-1-PC',     name:'TATA 1 PC Machine', point:'Dhoptala', route:'R1', unit:'HR' },
+  { id:'JCB-PAYLOADER', name:'JCB Payloader',     point:'CHP',      route:'R2', unit:'HR' },
+  { id:'TRAILER',       name:'Trailer Machine',   point:'Dhoptala', route:'R1', unit:'KM' }
+];
+function machineMeta(id){ for (var i=0;i<MACHINES.length;i++){ if (MACHINES[i].id===id) return MACHINES[i]; } return {unit:'HR'}; }
+
+/* =========================================================
+   STORAGE
+   ========================================================= */
+var LS = { cfg:'vt_cfg', veh:'vt_vehicles', log:'vt_logs', dsl:'vt_diesel', qty:'vt_qty' };
+function get(k,d){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return d; } }
+function getOr(k,d){ var v=get(k,d); return (v===null||v===undefined)?d:v; }
 function set(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
 
-var cfg = get(LS.cfg, null);
+var cfg    = get(LS.cfg, null);
 var vehicles = get(LS.veh, null);
-var logs = get(LS.log, []);
-var selVeh = null;
+var logs   = getOr(LS.log, []);
+var diesel = getOr(LS.dsl, []);
+var qty    = getOr(LS.qty, []);
+var selVeh = null, pendingRole = null;
+// migrate legacy (pre-role) installs: old setup had no 'role' field -> force fresh role-based setup
+if (cfg && !cfg.role) cfg = null;
+// DEMO MODE: open index.html?demo=1 to preview all screens with sample data (no SharePoint needed)
+var DEMO = /[?&]demo=1/.test(location.search);
 
-// one-time wipe of stale/test entries (data version bump)
-var DATA_VER = '2';
+// data version wipe of any stale test rows
+var DATA_VER = 'v3';
 if (localStorage.getItem('vt_dataver') !== DATA_VER) {
-  logs = []; set(LS.log, logs);
+  logs = []; diesel = []; qty = [];
+  set(LS.log,logs); set(LS.dsl,diesel); set(LS.qty,qty);
   localStorage.setItem('vt_dataver', DATA_VER);
 }
 
-// simple PIN hash (djb2)
-function pinHash(s){ var h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return 'h'+(h>>>0); }
-function tryUnlock(){
-  var p = document.getElementById('pinIn').value.trim();
-  if (cfg && pinHash(p) === cfg.pinH) {
-    document.getElementById('pinLock').classList.remove('show');
-    document.getElementById('pinIn').value='';
-    document.getElementById('pinErr').textContent='';
-  } else {
-    document.getElementById('pinErr').textContent = 'Wrong PIN / गलत पिन';
-    document.getElementById('pinIn').value='';
-  }
-}
-
 // Approved tippers per WCL letters No. 538 & 539 dt. 06/07/26 (Sub Area Manager, Dhoptala OCM)
-var FLEET_VER = '2';
+var FLEET_VER = 'v3';
 if (!vehicles || localStorage.getItem('vt_fleetver') !== FLEET_VER) {
   var job1 = ['MH34BZ0480','MH34BZ0481','MH34BG1627','MH34CQ5343','MH34CQ5443','MH34CQ5543','MH34CQ5643','MH34CQ5743'];
   var job2 = ['MH34BZ5070','MH34BZ5072','MH34BG5146','MH34BG5147','MH34BG5148','MH34BG7886','MH34BG5343','MH34BZ8043','MH34BZ8143','MH34BZ8243','MH34BZ8343','MH34BZ8443','MH34BZ8543'];
   var fleet = [];
   job1.forEach(function(n){ fleet.push({num:n, job:'Job 1'}); });
   job2.forEach(function(n){ fleet.push({num:n, job:'Job 2'}); });
-  // keep any real vehicle numbers the supervisor added manually (drop old placeholders)
-  (vehicles || []).forEach(function(v){
+  (vehicles||[]).forEach(function(v){
     var isPlaceholder = /^JOB[12]-V\d+$/.test(v.num);
-    var exists = fleet.some(function(f){ return f.num === v.num; });
+    var exists = fleet.some(function(f){ return f.num===v.num; });
     if (!isPlaceholder && !exists) fleet.push(v);
   });
   vehicles = fleet;
@@ -242,460 +444,1140 @@ if (!vehicles || localStorage.getItem('vt_fleetver') !== FLEET_VER) {
   localStorage.setItem('vt_fleetver', FLEET_VER);
 }
 
-document.getElementById('supSel').addEventListener('change', function(){
-  document.getElementById('supOther').classList.toggle('hidden', this.value !== '__other');
-});
+/* =========================================================
+   SHIFT / OPERATIONAL-DAY HELPERS
+   Operational day runs 07:00 -> next 07:00 (so the night shift
+   that starts at 23:00 belongs to the day it started on).
+   ========================================================= */
+function hm(str){ var p=str.split(':'); return parseInt(p[0],10)*60+parseInt(p[1],10); }
+function shiftOf(d){
+  var mins = d.getHours()*60 + d.getMinutes();
+  for (var i=0;i<CONFIG.SHIFTS.length;i++){
+    var s=CONFIG.SHIFTS[i], a=hm(s.start), b=hm(s.end);
+    if (a<b){ if (mins>=a && mins<b) return s.id; }
+    else    { if (mins>=a || mins<b) return s.id; } // wraps midnight
+  }
+  return CONFIG.SHIFTS[0].id;
+}
+function ymd(d){
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+// operational day for a Date: times before 07:00 belong to previous calendar day
+function opDateOf(d){
+  var dd = new Date(d.getTime());
+  if (dd.getHours()*60+dd.getMinutes() < hm(CONFIG.SHIFTS[0].start)) dd.setDate(dd.getDate()-1);
+  return ymd(dd);
+}
+function routeOfJob(job){ return job==='Job 1' ? 'R1' : 'R2'; }
+function today(){ return new Date().toLocaleDateString('en-IN'); }
+function nowT(){ return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
+function pinHash(s){ var h=5381; for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))|0; } return 'h'+(h>>>0); }
 
+/* =========================================================
+   SETUP / ROLE
+   ========================================================= */
+function pickRole(r){
+  pendingRole=r;
+  document.querySelectorAll('.rolebtn').forEach(function(b){ b.classList.toggle('sel', b.dataset.role===r); });
+  document.getElementById('supFields').classList.toggle('hidden', r!=='SUP');
+  document.getElementById('dslFields').classList.toggle('hidden', r!=='DSL');
+  document.getElementById('admFields').classList.toggle('hidden', r!=='ADM');
+  document.getElementById('pinBlock').classList.remove('hidden');
+}
+document.getElementById('supSel').addEventListener('change', function(){
+  document.getElementById('supOther').classList.toggle('hidden', this.value!=='__other');
+});
 function saveSetup(){
-  var s = document.getElementById('supSel').value;
-  if (s === '__other') s = document.getElementById('supOther').value.trim();
-  var c = document.getElementById('cpSel').value;
-  if (!s || !c) { alert('Please select name and checkpoint / नाम और चेकपॉइंट चुनें'); return; }
-  var p1 = document.getElementById('pinSet').value.trim();
-  var p2 = document.getElementById('pinSet2').value.trim();
-  if (!/^\d{4,6}$/.test(p1)) { alert('PIN must be 4–6 digits / पिन 4–6 अंकों का हो'); return; }
-  if (p1 !== p2) { alert('PINs do not match / पिन मेल नहीं खाते'); return; }
-  cfg = { sup:s, cp:c, pinH: pinHash(p1) };
-  set(LS.cfg, cfg);
-  boot(true); // fresh setup — already authenticated, skip lock once
+  var r=pendingRole;
+  if (!r){ alert('Select a role / भूमिका चुनें'); return; }
+  var name='', cp='', point='';
+  if (r==='SUP'){
+    name=document.getElementById('supSel').value;
+    if (name==='__other') name=document.getElementById('supOther').value.trim();
+    cp=document.getElementById('cpSel').value;
+    if (!name||!cp){ alert('Select name & checkpoint / नाम और चेकपॉइंट चुनें'); return; }
+  } else if (r==='DSL'){
+    name=document.getElementById('dslName').value.trim();
+    point=document.getElementById('dslPoint').value;
+    if (!name||!point){ alert('Enter name & fuel point / नाम और पॉइंट डालें'); return; }
+  } else {
+    name='Admin';
+  }
+  var p1=document.getElementById('pinSet').value.trim(), p2=document.getElementById('pinSet2').value.trim();
+  if (!/^\d{4,6}$/.test(p1)){ alert('PIN must be 4–6 digits / पिन 4–6 अंकों का'); return; }
+  if (p1!==p2){ alert('PINs do not match / पिन मेल नहीं खाते'); return; }
+  cfg={ role:r, name:name, cp:cp, point:point, pinH:pinHash(p1) };
+  set(LS.cfg,cfg);
+  boot(true);
 }
 function editSetup(){
-  // checkpoint is locked to this supervisor — PIN required to change
-  if (cfg && cfg.pinH) {
-    var p = prompt('Enter PIN to change setup / सेटअप बदलने के लिए पिन डालें:');
-    if (p === null) return;
-    if (pinHash(p.trim()) !== cfg.pinH) { alert('Wrong PIN / गलत पिन'); return; }
+  if (cfg && cfg.pinH){
+    var p=prompt('Enter PIN to change setup / सेटअप बदलने के लिए पिन:');
+    if (p===null) return;
+    if (pinHash(p.trim())!==cfg.pinH){ alert('Wrong PIN / गलत पिन'); return; }
   }
-  document.getElementById('pgSetup').classList.remove('hidden');
-  ['pgMain','pgLog','pgSet'].forEach(function(p2){ document.getElementById(p2).classList.add('hidden'); });
-  document.getElementById('tabBar').style.display='none';
+  showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
 }
+function showOnly(id){
+  ['pgSetup','pgMain','pgLog','pgDiesel','pgDash','pgData','pgSet'].forEach(function(p){
+    document.getElementById(p).classList.toggle('hidden', p!==id);
+  });
+}
+
+/* =========================================================
+   BOOT + TABS (role-aware)
+   ========================================================= */
+var TABS = {
+  SUP: [ {id:'Main',ico:'🚛',t:'Vehicles'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
+  DSL: [ {id:'Diesel',ico:'⛽',t:'Diesel'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
+  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'Data',ico:'📥',t:'Import'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
+};
+// demo shows every screen in one device
+var DEMO_TABS = [ {id:'Main',ico:'🚛',t:'Job1/2'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Diesel',ico:'⛽',t:'Diesel'},
+  {id:'Dash',ico:'📊',t:'Dash'}, {id:'Data',ico:'📥',t:'Import'}, {id:'Set',ico:'⚙️',t:'Set'} ];
 function boot(skipLock){
   if (!cfg) return;
-  if (!cfg.pinH) { editSetupForce(); return; } // old install without PIN — must re-setup
-  document.getElementById('pgSetup').classList.add('hidden');
+  if (!cfg.pinH){ showOnly('pgSetup'); return; }
+  buildTabs();
+  showOnly('pgSetup'); document.getElementById('pgSetup').classList.add('hidden');
   document.getElementById('tabBar').style.display='flex';
-  document.getElementById('hdrTitle').textContent = cfg.cp;
-  document.getElementById('hdrSub').textContent = cfg.sup + ' — Mohd Aamir Transport';
-  showTab('Main');
-  if (!skipLock) {
-    document.getElementById('pinWho').textContent = cfg.sup + ' — ' + cfg.cp;
+  document.getElementById('hdrTitle').textContent = DEMO ? '🎬 DEMO — all screens'
+    : (cfg.role==='SUP' ? cfg.cp : (cfg.role==='DSL' ? 'Diesel — '+cfg.point : 'Admin Dashboard'));
+  document.getElementById('hdrSub').textContent = (DEMO?'Sample data · ':'') + cfg.name + ' — Mohd Aamir Transport';
+  var first = (DEMO?DEMO_TABS:TABS[cfg.role])[0].id;
+  showTab(first);
+  if (!skipLock){
+    document.getElementById('pinWho').textContent = cfg.name + ' — ' + (cfg.cp||cfg.point||cfg.role);
     document.getElementById('pinLock').classList.add('show');
   }
 }
-function editSetupForce(){
-  document.getElementById('pgSetup').classList.remove('hidden');
-  ['pgMain','pgLog','pgSet'].forEach(function(p){ document.getElementById(p).classList.add('hidden'); });
-  document.getElementById('tabBar').style.display='none';
+function buildTabs(){
+  var bar=document.getElementById('tabBar'); bar.innerHTML='';
+  (DEMO?DEMO_TABS:TABS[cfg.role]).forEach(function(tb){
+    var d=document.createElement('div'); d.className='tab'; d.id='tab'+tb.id;
+    d.innerHTML='<span class="ico">'+tb.ico+'</span>'+tb.t;
+    d.onclick=function(){ showTab(tb.id); };
+    bar.appendChild(d);
+  });
+}
+function tryUnlock(){
+  var p=document.getElementById('pinIn').value.trim();
+  if (cfg && pinHash(p)===cfg.pinH){
+    document.getElementById('pinLock').classList.remove('show');
+    document.getElementById('pinIn').value=''; document.getElementById('pinErr').textContent='';
+  } else {
+    document.getElementById('pinErr').textContent='Wrong PIN / गलत पिन';
+    document.getElementById('pinIn').value='';
+  }
 }
 function showTab(t){
-  ['Main','Log','Dash','Set'].forEach(function(x){
-    document.getElementById('pg'+x).classList.toggle('hidden', x!==t);
-    document.getElementById('tab'+x).classList.toggle('act', x===t);
-  });
+  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', Set:'pgSet' };
+  showOnly(pageMap[t]);
+  document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('act'); });
+  var at=document.getElementById('tab'+t); if (at) at.classList.add('act');
   if (t==='Main') renderMain();
   if (t==='Log') renderLog();
-  if (t==='Dash') renderDash();
+  if (t==='Diesel') renderDiesel();
+  if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
 
-function today(){ return new Date().toLocaleDateString('en-IN'); }
-function nowT(){ return new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}); }
-function todayLogs(){ var d=today(); return logs.filter(function(l){ return l.date===d && l.cp===cfg.cp; }); }
+/* =========================================================
+   SUPERVISOR — trip logging
+   ========================================================= */
+function curOpDate(){ return opDateOf(new Date()); }
+function curShift(){ return shiftOf(new Date()); }
+function shiftLogs(){
+  var od=curOpDate(), sh=curShift();
+  return logs.filter(function(l){ return l.opDate===od && l.shift===sh && l.cp===cfg.cp; });
+}
+function opDayLogs(){
+  var od=curOpDate();
+  return logs.filter(function(l){ return l.opDate===od && l.cp===cfg.cp; });
+}
 function lastEvent(v){
-  var tl = todayLogs().filter(function(l){ return l.veh===v; });
+  var tl=opDayLogs().filter(function(l){ return l.veh===v; });
   return tl.length ? tl[tl.length-1] : null;
 }
-function mins(ts){
-  var m = Math.round((Date.now()-ts)/60000);
-  if (m<60) return m+' min';
-  return Math.floor(m/60)+'h '+(m%60)+'m';
-}
+function mins(ts){ var m=Math.round((Date.now()-ts)/60000); return m<60?m+' min':Math.floor(m/60)+'h '+(m%60)+'m'; }
 
+function setDemoCp(){
+  cfg.cp=document.getElementById('demoCp').value;
+  document.getElementById('hdrTitle').textContent='🎬 DEMO — '+cfg.cp;
+  renderMain();
+}
 function renderMain(){
-  var g = document.getElementById('vehGrid'); g.innerHTML='';
-  var inCount=0;
+  var bar=document.getElementById('demoCpBar');
+  if (bar){ bar.classList.toggle('hidden', !DEMO); if (DEMO) document.getElementById('demoCp').value=cfg.cp; }
+  var g1=document.getElementById('vehGrid1'), g2=document.getElementById('vehGrid2');
+  g1.innerHTML=''; g2.innerHTML='';
+  var inCount=0, od=curOpDate(), sh=curShift();
   vehicles.forEach(function(v){
-    var le = lastEvent(v.num);
-    var isIn = le && le.ev==='IN';
+    var le=lastEvent(v.num), isIn=le&&le.ev==='IN';
     if (isIn) inCount++;
-    var trips = todayLogs().filter(function(l){ return l.veh===v.num && l.ev==='IN'; }).length;
-    var d = document.createElement('div');
-    d.className = 'veh ' + (isIn?'in':'out');
-    d.innerHTML = '<div class="num">'+v.num+'</div><div class="job">'+v.job+'</div>'
-      + '<div class="st">'+(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—'))+'</div>'
-      + (le ? '<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>' : '<div class="since">No entry today</div>')
-      + '<div class="trips">'+trips+' visits today</div>';
-    d.onclick = function(){ openModal(v); };
-    g.appendChild(d);
+    var tripsDay=opDayLogs().filter(function(l){ return l.veh===v.num && l.ev==='IN'; }).length;
+    var tripsShift=logs.filter(function(l){ return l.opDate===od&&l.shift===sh&&l.cp===cfg.cp&&l.veh===v.num&&l.ev==='IN'; }).length;
+    var d=document.createElement('div');
+    d.className='veh '+(isIn?'in':'out');
+    d.innerHTML='<div class="num">'+v.num+'</div>'
+      +'<div class="st">'+(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—'))+'</div>'
+      +(le?'<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>':'<div class="since">No entry / कोई एंट्री नहीं</div>')
+      +'<div class="trips">'+tripsDay+' today</div>'
+      +'<div class="shifttrips">'+tripsShift+' this shift</div>';
+    d.onclick=function(){ openModal(v); };
+    (v.job==='Job 1'?g1:g2).appendChild(d);
   });
-  document.getElementById('stIn').textContent = inCount;
-  document.getElementById('stTrips').textContent = todayLogs().length;
-  document.getElementById('stWt').textContent = todayLogs().filter(function(l){ return l.ev === 'OUT' && l.wt == null; }).length;
+  document.getElementById('stIn').textContent=inCount;
+  document.getElementById('stTrips').textContent=shiftLogs().length;
+  document.getElementById('stShift').textContent=sh;
 }
-
 function openModal(v){
-  selVeh = v;
-  document.getElementById('mVeh').textContent = v.num + '  ('+v.job+')';
-  var le = lastEvent(v.num);
-  document.getElementById('mInfo').textContent = le
-    ? 'Last: '+le.ev+' at '+le.time+' — '+mins(le.ts)+' ago'
-    : 'No entry today / आज कोई एंट्री नहीं';
-  // strict alternation: disable the event that would repeat
-  var bi = document.getElementById('btnIn'), bo = document.getElementById('btnOut');
-  bi.disabled = !!(le && le.ev === 'IN');
-  bo.disabled = !!(le && le.ev === 'OUT');
-  bi.style.opacity = bi.disabled ? '.35' : '1';
-  bo.style.opacity = bo.disabled ? '.35' : '1';
+  selVeh=v;
+  document.getElementById('mVeh').textContent=v.num+'  ('+v.job+')';
+  var le=lastEvent(v.num);
+  document.getElementById('mInfo').textContent=le?('Last: '+le.ev+' at '+le.time+' — '+mins(le.ts)+' ago'):'No entry today / आज कोई एंट्री नहीं';
+  var bi=document.getElementById('btnIn'), bo=document.getElementById('btnOut');
+  bi.disabled=!!(le&&le.ev==='IN'); bo.disabled=!!(le&&le.ev==='OUT');
+  bi.style.opacity=bi.disabled?'.35':'1'; bo.style.opacity=bo.disabled?'.35':'1';
   document.getElementById('modal').classList.add('show');
 }
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
-
 function logEvent(ev){
-  var le = lastEvent(selVeh.num);
-  // hard block: a vehicle that is IN must go OUT first (and vice versa)
-  if (le && le.ev===ev) {
+  var le=lastEvent(selVeh.num);
+  if (le&&le.ev===ev){
     alert(ev==='IN'
-      ? 'BLOCKED: '+selVeh.num+' is already IN since '+le.time+'. It must go OUT first.\nगाड़ी पहले से अंदर है ('+le.time+' से)। पहले OUT करें।'
-      : 'BLOCKED: '+selVeh.num+' already went OUT at '+le.time+'. It must come IN first.\nगाड़ी पहले ही बाहर जा चुकी है ('+le.time+')। पहले IN करें।');
+      ?'BLOCKED: '+selVeh.num+' already IN since '+le.time+'. Must go OUT first.\nगाड़ी पहले से अंदर है। पहले OUT करें।'
+      :'BLOCKED: '+selVeh.num+' already OUT at '+le.time+'. Must come IN first.\nगाड़ी पहले ही बाहर जा चुकी है। पहले IN करें।');
     return;
   }
-  // confirmation before saving
-  if (!confirm('Confirm entry? / एंट्री पक्की करें?\n\n'
-      + selVeh.num + '\n' + ev + (ev==='IN' ? ' (गाड़ी अंदर)' : ' (गाड़ी बाहर)')
-      + '\n' + nowT() + ' — ' + cfg.cp)) return;
-  logs.push({ date:today(), time:nowT(), ts:Date.now(), cp:cfg.cp, sup:cfg.sup,
-    veh:selVeh.num, job:selVeh.job, ev:ev, synced:false });
-  set(LS.log, logs);
-  closeModal(); renderMain();
-  syncNow(true); // push to SharePoint in background if URL configured
+  if (!confirm('Confirm entry? / एंट्री पक्की करें?\n\n'+selVeh.num+'\n'+ev+(ev==='IN'?' (अंदर)':' (बाहर)')+'\n'+nowT()+' — '+cfg.cp)) return;
+  var d=new Date();
+  logs.push({ date:today(), time:nowT(), ts:d.getTime(), opDate:opDateOf(d), shift:shiftOf(d),
+    cp:cfg.cp, sup:cfg.name, veh:selVeh.num, job:selVeh.job, route:routeOfJob(selVeh.job), ev:ev, synced:false });
+  set(LS.log,logs); closeModal(); renderMain(); syncNow(true);
 }
-
-// ---- SharePoint sync via Microsoft Graph (same pattern as Dolly ERP) ----
-// PASTE the Client ID from the dolly-erp Azure AD app registration (same as in dolly-erp index.html):
-var AAD_CLIENT_ID = '218ae300-7a39-48f1-ad89-bbadca020b29';
-var AAD_TENANT    = 'e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2'; // oregenesis tenant
-var GRAPH_LIST_URL = 'https://graph.microsoft.com/v1.0/sites/oregenesis.sharepoint.com:/sites/WCLTransportation:/lists/VehicleTripLog/items';
-var GRAPH_SCOPES = ['Sites.ReadWrite.All','User.Read'];
-
-var msalApp = null;
-function authConfigured(){ return AAD_CLIENT_ID.indexOf('__') === -1 && typeof msal !== 'undefined'; }
-
-async function initAuth(){
-  if (!authConfigured()) return;
-  msalApp = new msal.PublicClientApplication({
-    auth: { clientId: AAD_CLIENT_ID,
-            authority: 'https://login.microsoftonline.com/' + AAD_TENANT,
-            redirectUri: window.location.origin + window.location.pathname },
-    cache: { cacheLocation: 'localStorage' }
-  });
-  await msalApp.initialize();
-  try {
-    var resp = await msalApp.handleRedirectPromise();
-    var acct = (resp && resp.account) || msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
-    if (acct) { msalApp.setActiveAccount(acct); syncNow(true); }
-  } catch(e) { console.log('auth redirect error', e); }
-  if (typeof renderSet === 'function' && !document.getElementById('pgSet').classList.contains('hidden')) renderSet();
-}
-
-function signIn(){
-  if (!authConfigured()) { alert('Sync not configured yet (Client ID missing) / अभी कॉन्फ़िगर नहीं हुआ'); return; }
-  msalApp.loginRedirect({ scopes: GRAPH_SCOPES });
-}
-function signedInUser(){
-  if (!msalApp) return null;
-  var a = msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
-  return a ? (a.name || a.username) : null;
-}
-async function getToken(){
-  var acct = msalApp.getActiveAccount() || msalApp.getAllAccounts()[0];
-  if (!acct) return null;
-  try {
-    var r = await msalApp.acquireTokenSilent({ scopes: GRAPH_SCOPES, account: acct });
-    return r.accessToken;
-  } catch(e) { return null; }
-}
-
-var syncing = false;
-async function syncNow(silent){
-  if (!authConfigured()) { if(!silent) alert('Sync not configured yet / सिंक कॉन्फ़िगर नहीं हुआ'); return; }
-  if (syncing) return;
-  var pending = logs.filter(function(l){ return !l.synced; });
-  if (!pending.length) { if(!silent) alert('All entries synced ✓ / सब सिंक हो गया'); return; }
-  var token = await getToken();
-  if (!token) { if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
-  syncing = true;
-  var ok = 0, fail = 0;
-  for (var i = 0; i < pending.length; i++) {
-    var l = pending[i];
-    try {
-      var flds = { Title: l.date, EntryTime: l.time, Timestamp: new Date(l.ts).toISOString(),
-        Checkpoint: l.cp, Supervisor: l.sup, Vehicle: l.veh, Job: l.job, Event: l.ev };
-      if (l.wt != null) { flds.NetWeight = l.wt; flds.SlipNo = l.slip || ''; }
-      var r = await fetch(GRAPH_LIST_URL, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields: flds })
-      });
-      if (r.ok) {
-        try { var d = await r.json(); l.spId = d.id; } catch(e2) {}
-        l.synced = true;
-        if (l.wt != null) l.wtSynced = true;
-        ok++;
-      } else { fail++; }
-    } catch(e) { fail++; break; } // network gone — stop, retry later
-  }
-  // push weights added later to already-synced entries
-  var wtPending = logs.filter(function(x){ return x.synced && x.spId && x.wt != null && !x.wtSynced; });
-  for (var j = 0; j < wtPending.length; j++) {
-    var w = wtPending[j];
-    try {
-      var pr = await fetch(GRAPH_LIST_URL + '/' + w.spId + '/fields', {
-        method: 'PATCH',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ NetWeight: w.wt, SlipNo: w.slip || '' })
-      });
-      if (pr.ok) { w.wtSynced = true; ok++; } else { fail++; }
-    } catch(e) { fail++; break; }
-  }
-  set(LS.log, logs);
-  syncing = false;
-  if (!silent) alert(ok + ' entries synced ✓' + (fail ? (' · ' + fail + ' failed, will retry') : ''));
-  if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
-}
-// real-time sync: entries push immediately on save; retry any failures every 60s
-setInterval(function(){ syncNow(true); }, 60000);
-// also sync the moment the app returns to foreground
-document.addEventListener('visibilitychange', function(){
-  if (document.visibilityState === 'visible') syncNow(true);
-});
-initAuth();
-
-// ---- Daily Target Dashboard ----
-// Tonnage = loaded OUT weights at the loading checkpoint of each job.
-var DAILY_TARGET = 2700;
-var CONTRACT_QTY = 243000;   // Te per job
-var CONTRACT_DAYS = 90;
-var JOB_DEF = [
-  { job:'Job 1', label:'Job 1 · DOCM → SOCM',            loadCp:'Dhoptala Stock Yard', start:'2026-07-08' },
-  { job:'Job 2', label:'Job 2 · SOCM → Ballarpur Siding', loadCp:'Sasti CHP',           start:'2026-07-09' }
-];
-function istDate(x){ return new Date(x).toLocaleDateString('en-CA', { timeZone:'Asia/Kolkata' }); }
-function dayCount(startStr, todayStr){
-  return Math.floor((new Date(todayStr+'T00:00:00Z') - new Date(startStr+'T00:00:00Z'))/86400000) + 1;
-}
-var dashCache = null, dashAt = 0;
-async function fetchAllItems(){
-  var token = await getToken();
-  if (!token) return null;
-  var url = GRAPH_LIST_URL + '?$expand=fields($select=Title,Timestamp,Checkpoint,Vehicle,Job,Event,NetWeight)&$top=999';
-  var items = [], guard = 0;
-  while (url && guard < 40) {
-    var r = await fetch(url, { headers:{ 'Authorization':'Bearer '+token } });
-    if (!r.ok) throw new Error('Graph '+r.status);
-    var d = await r.json();
-    (d.value||[]).forEach(function(it){ if (it.fields) items.push(it.fields); });
-    url = d['@odata.nextLink'] || null;
-    guard++;
-  }
-  return items;
-}
-function fmtT(n){ return (Math.round(n*100)/100).toLocaleString('en-IN'); }
-async function renderDash(force){
-  var el = document.getElementById('dashBody');
-  if (!authConfigured() || !signedInUser()) {
-    el.innerHTML = '<div class="card" style="color:var(--amber)">⚠️ Sign in first (Settings) to load data from SharePoint / पहले साइन इन करें</div>';
-    return;
-  }
-  if (!dashCache || force || Date.now()-dashAt > 120000) {
-    el.innerHTML = '<div class="card" style="color:var(--muted)">Loading from SharePoint… / लोड हो रहा है…</div>';
-    try { dashCache = await fetchAllItems(); dashAt = Date.now(); }
-    catch(e){ el.innerHTML = '<div class="card" style="color:var(--red)">Could not load data ('+e.message+'). Check network & sign-in.</div>'; return; }
-  }
-  if (!dashCache) { el.innerHTML = '<div class="card" style="color:var(--amber)">Sign in required / साइन इन करें</div>'; return; }
-  var todayStr = istDate(Date.now());
-  var html = '';
-  JOB_DEF.forEach(function(J){
-    // per-day tonnage & trips from loaded OUTs at the job's loading point
-    var byDay = {}, tripsByDay = {}, wTrips = 0;
-    dashCache.forEach(function(f){
-      if (f.Job !== J.job || f.Event !== 'OUT' || f.Checkpoint !== J.loadCp) return;
-      var d = f.Timestamp ? istDate(f.Timestamp) : f.Title;
-      if (!d || d < J.start) return;
-      tripsByDay[d] = (tripsByDay[d]||0) + 1;
-      var w = parseFloat(f.NetWeight);
-      if (!isNaN(w) && w > 0) { byDay[d] = (byDay[d]||0) + w; wTrips++; }
-    });
-    var days = dayCount(J.start, todayStr);
-    if (days < 1) days = 0;
-    var cumTarget = days * DAILY_TARGET;
-    var cumAch = 0, todayTe = byDay[todayStr] || 0;
-    Object.keys(byDay).forEach(function(d){ if (d <= todayStr) cumAch += byDay[d]; });
-    var shortfall = cumTarget - cumAch;               // +ve = behind
-    var reqToday = Math.max(0, cumTarget - (cumAch - todayTe)); // needed today incl. backlog
-    var pct = reqToday > 0 ? Math.min(100, Math.round(todayTe / reqToday * 100)) : 100;
-    var behind = shortfall > 0.01;
-    html += '<div class="card">'
-      + '<div style="font-weight:800;color:var(--blue);font-size:15px">'+J.label+'</div>'
-      + '<div style="font-size:11.5px;color:var(--muted);margin-bottom:8px">Since '+J.start.split('-').reverse().join('/')+' · Day '+days+' · Target '+DAILY_TARGET.toLocaleString('en-IN')+' Te/day</div>'
-      + '<div style="display:flex;gap:8px;text-align:center;margin-bottom:8px">'
-      +   '<div style="flex:1"><div style="font-size:20px;font-weight:800;color:var(--blue)">'+fmtT(todayTe)+'</div><div style="font-size:10.5px;color:var(--muted)">Today Te / आज</div></div>'
-      +   '<div style="flex:1"><div style="font-size:20px;font-weight:800">'+(tripsByDay[todayStr]||0)+'</div><div style="font-size:10.5px;color:var(--muted)">Trips today / ट्रिप</div></div>'
-      +   '<div style="flex:1"><div style="font-size:20px;font-weight:800;color:'+(behind?'var(--red)':'var(--green)')+'">'+fmtT(Math.abs(shortfall))+'</div><div style="font-size:10.5px;color:var(--muted)">'+(behind?'Shortfall / कमी':'Surplus / अधिक')+'</div></div>'
-      + '</div>'
-      + '<div style="font-size:12.5px;margin-bottom:4px"><b>Required today (incl. backlog): '+fmtT(reqToday)+' Te</b> / आज चाहिए</div>'
-      + '<div style="background:#e6ecf3;border-radius:8px;height:14px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+(pct>=100?'var(--green)':(pct>=60?'var(--amber)':'var(--red)'))+'"></div></div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-top:3px">'+pct+'% of today\'s requirement · Cumulative: '+fmtT(cumAch)+' / '+fmtT(cumTarget)+' Te</div>';
-    // --- run rate vs required run rate (contract basis: 2,43,000 Te in 90 days) ---
-    var runRate = days > 0 ? cumAch / days : 0;
-    var remQty = Math.max(0, CONTRACT_QTY - cumAch);
-    var remDays = Math.max(1, CONTRACT_DAYS - days);
-    var reqRate = remQty / remDays;
-    var paceX = runRate > 0 ? (reqRate / runRate) : 0;
-    var avgLoad = wTrips > 0 ? cumAch / wTrips : 0;
-    var reqTrips = avgLoad > 0 ? Math.ceil(reqRate / avgLoad) : 0;
-    html += '<div style="display:flex;gap:8px;text-align:center;margin-top:10px;padding-top:10px;border-top:1px solid #edf1f6">'
-      + '<div style="flex:1"><div style="font-size:17px;font-weight:800;color:var(--blue)">'+fmtT(Math.round(runRate))+'</div><div style="font-size:10px;color:var(--muted)">Run rate Te/day / चाल</div></div>'
-      + '<div style="flex:1"><div style="font-size:17px;font-weight:800;color:var(--red)">'+fmtT(Math.round(reqRate))+'</div><div style="font-size:10px;color:var(--muted)">Required Te/day / ज़रूरी</div></div>'
-      + '<div style="flex:1"><div style="font-size:17px;font-weight:800;color:'+(paceX>1.05?'var(--red)':'var(--green)')+'">'+(paceX>0?(Math.round(paceX*10)/10)+'×':'—')+'</div><div style="font-size:10px;color:var(--muted)">Pace needed / गति</div></div>'
-      + '</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-top:5px">Avg load '+(avgLoad?fmtT(Math.round(avgLoad*10)/10):'—')+' Te/trip → need ≈ <b>'+reqTrips+' loaded trips/day</b> to finish '+fmtT(CONTRACT_QTY)+' Te in '+CONTRACT_DAYS+' days ('+remDays+' days left)</div>'
-      + (behind ? '<div style="margin-top:8px;font-size:12px;color:var(--red);font-weight:600">⚠️ Behind target — penalty risk. Backlog rolls into tomorrow\'s requirement. / लक्ष्य से पीछे — पेनल्टी का जोखिम</div>' : '<div style="margin-top:8px;font-size:12px;color:var(--green);font-weight:600">✅ On track / लक्ष्य पर</div>');
-    // last 7 days mini-table
-    html += '<table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:11.5px">'
-      + '<tr style="color:var(--muted);text-align:left"><th style="padding:3px 0">Date</th><th style="text-align:right">Trips</th><th style="text-align:right">Te</th><th style="text-align:right">±Cum</th></tr>';
-    var runCum = 0;
-    for (var i = 0; i < days; i++) {
-      var dt = new Date(new Date(J.start+'T00:00:00Z').getTime() + i*86400000);
-      var ds = dt.toISOString().slice(0,10);
-      runCum += (byDay[ds]||0) - DAILY_TARGET;
-      if (days - i > 7) continue; // show only last 7 days
-      var diff = runCum;
-      html += '<tr style="border-top:1px solid #edf1f6">'
-        + '<td style="padding:3px 0">'+ds.slice(8,10)+'/'+ds.slice(5,7)+(ds===todayStr?' •':'')+'</td>'
-        + '<td style="text-align:right">'+(tripsByDay[ds]||0)+'</td>'
-        + '<td style="text-align:right">'+fmtT(byDay[ds]||0)+'</td>'
-        + '<td style="text-align:right;color:'+(diff<0?'var(--red)':'var(--green)')+'">'+(diff<0?'−':'+')+fmtT(Math.abs(diff))+'</td></tr>';
+function durfmt(ms){ if (ms==null||isNaN(ms)) return '—'; var m=Math.round(ms/60000); return m<60 ? m+'m' : (Math.floor(m/60)+'h '+(m%60)+'m'); }
+// pair IN->OUT per vehicle into "visits" (one row = one visit to this checkpoint)
+function buildVisits(events){
+  var open={}, visits=[];
+  events.slice().sort(function(a,b){ return a.ts-b.ts; }).forEach(function(l){
+    if (l.ev==='IN'){
+      if (open[l.veh]) visits.push({ veh:l.veh, job:open[l.veh].job, inn:open[l.veh], out:null }); // unmatched previous IN
+      open[l.veh]=l;
+    } else {
+      if (open[l.veh]){ visits.push({ veh:l.veh, job:open[l.veh].job, inn:open[l.veh], out:l }); delete open[l.veh]; }
+      else visits.push({ veh:l.veh, job:l.job, inn:null, out:l });
     }
-    html += '</table></div>';
   });
-  html += '<div style="font-size:11px;color:var(--muted);padding:0 4px">Tonnage counts weighed OUT entries at the loading point (Job 1: Dhoptala, Job 2: Sasti CHP). Entries without weights are not counted — keep weights updated. Data refreshes from SharePoint every 2 min.</div>';
-  el.innerHTML = html;
+  Object.keys(open).forEach(function(v){ visits.push({ veh:v, job:open[v].job, inn:open[v], out:null }); });
+  return visits;
 }
-
+function logTripTable(trips, title, dot){
+  var h='<div class="jobhead" style="margin:6px 2px 6px"><span class="dot" style="background:'+dot+'"></span><span class="t">'+title+'</span></div>';
+  if (!trips.length) return h+'<div class="muted-note" style="margin-bottom:8px">No trips / कोई ट्रिप नहीं</div>';
+  h+='<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Src IN</th><th>Src OUT</th><th>Dest IN</th><th>Dest OUT</th><th>Total</th><th></th></tr></thead><tbody>';
+  trips.forEach(function(t){
+    var total=(t.srcIn&&t.dstOut)?t.dstOut-t.srcIn:null;
+    var ts=[t.srcIn,t.srcOut,t.dstIn,t.dstOut].filter(Boolean).join(',');
+    h+='<tr><td class="l">'+t.veh+'</td>'
+      +'<td>'+tfmt(t.srcIn)+'</td><td>'+tfmt(t.srcOut)+'</td><td>'+tfmt(t.dstIn)+'</td><td>'+tfmt(t.dstOut)+'</td>'
+      +'<td'+(total?' style="font-weight:700;color:var(--blue)"':'')+'>'+durfmt(total)+'</td>'
+      +'<td><span class="del" data-ts="'+ts+'">✕</span></td></tr>';
+  });
+  return h+'</tbody></table>';
+}
 function renderLog(){
-  var el = document.getElementById('logList');
-  var tl = todayLogs().slice().reverse();
-  if (!tl.length) { el.innerHTML = '<div style="color:var(--muted);padding:10px">No entries yet / अभी कोई एंट्री नहीं</div>'; return; }
-  el.innerHTML = '';
-  tl.forEach(function(l){
-    var idx = logs.indexOf(l);
-    var r = document.createElement('div'); r.className='logrow';
-    // one weight per completed visit — entered on the OUT entry only
-    var wtHtml = '';
-    if (l.ev === 'OUT') {
-      wtHtml = l.wt != null
-        ? '<span class="pill wtbtn" data-i="'+idx+'" style="background:#e8f5e9;color:var(--green)">⚖ '+l.wt+' Te</span>'
-        : '<span class="pill wtbtn" data-i="'+idx+'" style="background:#fff3e0;color:var(--amber)">⚖ + वज़न</span>';
-    }
-    r.innerHTML = '<span class="t">'+l.time+'</span><span class="ev '+l.ev+'">'+l.ev+'</span>'
-      + '<span>'+l.veh+'</span><span style="color:var(--muted);font-size:12px">'+l.job+'</span>'
-      + wtHtml
-      + '<span class="del" data-i="'+idx+'">✕</span>';
-    r.querySelector('.del').onclick = function(){
-      if (confirm('Delete this entry? / यह एंट्री हटाएं?')) { logs.splice(+this.dataset.i,1); set(LS.log,logs); renderLog(); }
+  var el=document.getElementById('logList');
+  var day=curOpDate();
+  var all=reconstructTripsFrom(logs, day).sort(function(a,b){ return (b.srcIn||b.dstOut||0)-(a.srcIn||a.dstOut||0); });
+  if (!all.length){ el.innerHTML='<div style="color:var(--muted);padding:10px">No trips today / आज कोई ट्रिप नहीं</div>'; return; }
+  var j1=all.filter(function(t){return t.job==='Job 1';}), j2=all.filter(function(t){return t.job==='Job 2';});
+  el.innerHTML='<div class="muted-note">Each trip records 4 stamps: Source IN → Source OUT → Dest IN → Dest OUT. (Blank = not yet logged by that checkpoint.)</div>'
+    + logTripTable(j1,'JOB 1 — Dhoptala → CHP','#1565c0')
+    + '<div style="height:14px"></div>'
+    + logTripTable(j2,'JOB 2 — SOCM → Siding','#7b1fa2');
+  Array.prototype.forEach.call(el.querySelectorAll('.del'), function(x){
+    x.onclick=function(){
+      if (!confirm('Delete this trip’s entries? / यह ट्रिप हटाएं?')) return;
+      var kill={}; this.dataset.ts.split(',').forEach(function(v){ kill[v]=true; });
+      logs=logs.filter(function(l){ return !kill[String(l.ts)]; });
+      set(LS.log,logs); renderLog(); renderMain();
     };
-    var wb = r.querySelector('.wtbtn');
-    if (wb) wb.onclick = function(){ addWeight(+this.dataset.i); };
-    el.appendChild(r);
   });
 }
-
-// deferred weighbridge entry — supervisors add weight when they get the slip
-function addWeight(idx){
-  var l = logs[idx];
-  if (!l) return;
-  var wIn = prompt('Net Weight in Te / नेट वज़न (टन में)\n' + l.veh + ' · ' + l.ev + ' @ ' + l.time
-    + (l.wt != null ? '\nCurrent: ' + l.wt + ' Te' : ''), l.wt != null ? l.wt : '');
-  if (wIn === null) return;
-  var w = parseFloat(String(wIn).replace(',','.'));
-  if (isNaN(w) || w <= 0 || w > 100) { alert('Enter a valid weight in Te / सही वज़न डालें'); return; }
-  var s = prompt('Weighbridge Slip No. (optional) / स्लिप नंबर', l.slip || '');
-  if (s === null) s = l.slip || '';
-  if (!confirm('Confirm weight? / वज़न पक्का करें?\n\n' + l.veh + '\n' + w + ' Te' + (s ? '\nSlip: ' + s : ''))) return;
-  l.wt = w; l.slip = s.trim(); l.wtSynced = false;
-  set(LS.log, logs);
-  renderLog();
-  syncNow(true);
-}
-
 function shareWhatsApp(){
-  var tl = todayLogs();
-  if (!tl.length) { alert('No entries / कोई एंट्री नहीं'); return; }
-  var txt = '*'+cfg.cp+'* — '+today()+'\nSupervisor: '+cfg.sup+'\n\n';
-  tl.forEach(function(l){ txt += l.time+' | '+l.veh+' | '+l.ev+' | '+l.job+(l.wt!=null?' | '+l.wt+' Te'+(l.slip?' (Slip '+l.slip+')':''):'')+'\n'; });
-  var totWt = tl.reduce(function(a,l){ return a + (l.wt||0); }, 0);
-  txt += '\nTotal entries: '+tl.length + (totWt ? '\nTotal weight: '+totWt.toFixed(2)+' Te' : '');
+  var tl=shiftLogs();
+  if (!tl.length){ alert('No entries / कोई एंट्री नहीं'); return; }
+  var txt='*'+cfg.cp+'* — '+today()+' — '+curShift()+'\nSupervisor: '+cfg.name+'\n\n';
+  tl.forEach(function(l){ txt+=l.time+' | '+l.veh+' | '+l.ev+' | '+l.job+'\n'; });
+  txt+='\nTotal entries: '+tl.length;
   window.open('https://wa.me/?text='+encodeURIComponent(txt));
 }
-
 function exportCSV(){
-  if (!logs.length) { alert('No data'); return; }
-  var csv = 'Date,Time,Checkpoint,Supervisor,Vehicle,Job,Event,NetWeight,SlipNo\n';
-  logs.forEach(function(l){ csv += [l.date,l.time,l.cp,l.sup,l.veh,l.job,l.ev,(l.wt!=null?l.wt:''),(l.slip||'')].join(',')+'\n'; });
-  var a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download = 'trip_log_'+cfg.cp.replace(/ /g,'_')+'_'+today().replace(/\//g,'-')+'.csv';
-  a.click();
+  if (!logs.length){ alert('No data'); return; }
+  var csv='OpDate,Shift,Date,Time,Checkpoint,Supervisor,Vehicle,Job,Route,Event\n';
+  logs.forEach(function(l){ csv+=[l.opDate,l.shift,l.date,l.time,l.cp,l.sup,l.veh,l.job,l.route,l.ev].join(',')+'\n'; });
+  dl(csv,'trip_log_'+(cfg.cp||'')+'_'+curOpDate()+'.csv');
 }
-
+function dl(text,name){
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([text],{type:'text/csv'})); a.download=name; a.click();
+}
 function addVehicle(){
-  var n = prompt('Vehicle number (e.g. MH34AB1234) / गाड़ी नंबर:');
-  if (!n) return;
-  n = n.trim().toUpperCase().replace(/\s+/g,'');
-  var j = confirm('OK = Job 1 (Dhoptala→CHP)\nCancel = Job 2 (CHP→Ballarpur)') ? 'Job 1' : 'Job 2';
-  vehicles.push({num:n, job:j}); set(LS.veh, vehicles);
-  renderMain(); if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
+  document.getElementById('avNum').value='';
+  document.getElementById('avJob').value='Job 1';
+  document.getElementById('addVehModal').classList.add('show');
+  setTimeout(function(){ document.getElementById('avNum').focus(); }, 100);
+}
+function closeAddVeh(){ document.getElementById('addVehModal').classList.remove('show'); }
+function saveNewVehicle(){
+  var n=document.getElementById('avNum').value.trim().toUpperCase().replace(/\s+/g,'');
+  if (!n){ alert('Enter vehicle number / गाड़ी नंबर डालें'); return; }
+  if (vehicles.some(function(v){ return v.num===n; })){ alert(n+' already exists / पहले से मौजूद है'); return; }
+  var j=document.getElementById('avJob').value;
+  vehicles.push({num:n, job:j}); set(LS.veh,vehicles);
+  closeAddVeh(); renderMain();
+  if (!document.getElementById('pgSet').classList.contains('hidden')) renderSet();
 }
 
+/* =========================================================
+   DIESEL — entry
+   ========================================================= */
+function onDType(){
+  var t=document.getElementById('dType').value;
+  var sel=document.getElementById('dAsset'); sel.innerHTML='';
+  document.getElementById('dHoursBlock').classList.toggle('hidden', t!=='MACHINE');
+  if (t==='TIPPER'){
+    vehicles.forEach(function(v){ var o=document.createElement('option'); o.value=v.num; o.textContent=v.num+' ('+v.job+')'; sel.appendChild(o); });
+    sel.onchange=null;
+  } else {
+    MACHINES.forEach(function(m){ var o=document.createElement('option'); o.value=m.id; o.textContent=m.name+' @ '+m.point; sel.appendChild(o); });
+    sel.onchange=updateMachineLabels; updateMachineLabels();
+  }
+}
+function updateMachineLabels(){
+  var m=machineMeta(document.getElementById('dAsset').value);
+  var isKm=m.unit==='KM';
+  document.getElementById('dStartLbl').textContent=(isKm?'Odometer KM — Start reading':'Hour-meter — Start reading')+' / स्टार्ट';
+  document.getElementById('dStopLbl').textContent=(isKm?'Odometer KM — Stop reading':'Hour-meter — Stop reading')+' / स्टॉप';
+  updateRunNote();
+}
+function updateRunNote(){
+  var m=machineMeta(document.getElementById('dAsset').value);
+  var a=parseFloat(document.getElementById('dStart').value), b=parseFloat(document.getElementById('dStop').value);
+  var unit=m.unit==='KM'?'km':'hrs';
+  document.getElementById('dRunNote').textContent=(!isNaN(a)&&!isNaN(b))?('Run = '+fmt(b-a,1)+' '+unit):('Run = Stop − Start ('+unit+')');
+}
+function dslShiftEntries(){
+  var od=curOpDate(), sh=curShift();
+  return diesel.filter(function(x){ return x.opDate===od && x.shift===sh; });
+}
+function saveDiesel(){
+  var type=document.getElementById('dType').value;
+  var asset=document.getElementById('dAsset').value;
+  var lit=parseFloat(document.getElementById('dLitres').value);
+  var slip=document.getElementById('dSlip').value.trim();
+  if (isNaN(lit)||lit<=0||lit>2000){ alert('Enter valid litres / सही लीटर डालें'); return; }
+  var d=new Date();
+  var rec={ date:today(), time:nowT(), ts:d.getTime(), opDate:opDateOf(d), shift:shiftOf(d),
+    operator:cfg.name, point:cfg.point, assetType:type, assetId:asset,
+    litres:lit, slip:slip, hours:null, km:null, start:null, stop:null, route:'', synced:false };
+  if (type==='MACHINE'){
+    var meta=machineMeta(asset);
+    var a=parseFloat(document.getElementById('dStart').value), b=parseFloat(document.getElementById('dStop').value);
+    if (isNaN(a)||isNaN(b)||b<a){ alert('Enter valid Start & Stop readings (Stop ≥ Start) / सही रीडिंग डालें'); return; }
+    rec.start=a; rec.stop=b; rec.route=meta.route||'';
+    if (meta.unit==='KM') rec.km=b-a; else rec.hours=b-a;
+  }
+  var runTxt = rec.hours!=null?(' · '+fmt(rec.hours,1)+' hr'):(rec.km!=null?(' · '+fmt(rec.km,1)+' km'):'');
+  if (!confirm('Confirm diesel? / डीज़ल पक्का?\n\n'+asset+'\n'+lit+' L'+runTxt+(slip?('\nSlip: '+slip):''))) return;
+  diesel.push(rec); set(LS.dsl,diesel);
+  ['dLitres','dStart','dStop','dSlip'].forEach(function(id){ document.getElementById(id).value=''; });
+  renderDiesel(); syncNow(true);
+}
+function dieselGroupTable(map, title, dot, isMachine){
+  var keys=Object.keys(map).sort();
+  var h='<div class="jobhead" style="margin:6px 2px 6px"><span class="dot" style="background:'+dot+'"></span><span class="t">'+title+'</span></div>';
+  if (!keys.length) return h+'<div class="muted-note" style="margin-bottom:8px">None this shift / इस शिफ्ट कुछ नहीं</div>';
+  var totL=0, totH=0;
+  h+='<table class="dash"><thead><tr><th class="l">'+(isMachine?'Machine':'Vehicle')+'</th><th>Fills</th><th>Litres</th>'+(isMachine?'<th>Hours</th>':'')+'</tr></thead><tbody>';
+  keys.forEach(function(k){ var g=map[k]; totL+=g.lit; totH+=g.hrs;
+    h+='<tr><td class="l">'+k+'</td><td>'+g.cnt+'</td><td>'+fmt(g.lit,0)+'</td>'+(isMachine?('<td>'+fmt(g.hrs,1)+'</td>'):'')+'</tr>';
+  });
+  h+='<tr style="font-weight:700"><td class="l">Total</td><td></td><td>'+fmt(totL,0)+' L</td>'+(isMachine?('<td>'+fmt(totH,1)+'</td>'):'')+'</tr>';
+  return h+'</tbody></table>';
+}
+function renderDiesel(){
+  onDType();
+  var ents=dslShiftEntries();
+  var jobOf={}; vehicles.forEach(function(v){ jobOf[v.num]=v.job; });
+  function grp(pred){ var m={}; ents.filter(pred).forEach(function(x){ var g=m[x.assetId]=m[x.assetId]||{lit:0,cnt:0,hrs:0}; g.lit+=x.litres; g.cnt++; g.hrs+=(x.hours!=null?x.hours:(x.km||0)); }); return m; }
+  var g1=grp(function(x){ return x.assetType==='TIPPER' && jobOf[x.assetId]==='Job 1'; });
+  var g2=grp(function(x){ return x.assetType==='TIPPER' && jobOf[x.assetId]==='Job 2'; });
+  var gm=grp(function(x){ return x.assetType==='MACHINE'; });
+  var html = dieselGroupTable(g1,'JOB 1 Tippers','#1565c0',false)
+    + '<div style="height:12px"></div>' + dieselGroupTable(g2,'JOB 2 Tippers','#7b1fa2',false)
+    + '<div style="height:12px"></div>' + dieselGroupTable(gm,'Machines','#ef6c00',true);
+  var rec=ents.slice().reverse();
+  if (rec.length){
+    html+='<div class="muted-note" style="margin-top:12px">Entries this shift (tap ✕ to delete):</div>';
+    rec.forEach(function(x){ var idx=diesel.indexOf(x);
+      html+='<div class="logrow"><span class="t">'+x.time+'</span><span style="font-weight:700">'+x.assetId+'</span>'
+        +'<span class="pill">'+x.litres+' L'+(x.hours?(' · '+x.hours+'h'):'')+'</span><span class="del" data-i="'+idx+'">✕</span></div>';
+    });
+  }
+  var el=document.getElementById('dieselList'); el.innerHTML=html;
+  Array.prototype.forEach.call(el.querySelectorAll('.del'), function(d){
+    d.onclick=function(){ if (confirm('Delete? / हटाएं?')){ diesel.splice(+this.dataset.i,1); set(LS.dsl,diesel); renderDiesel(); } };
+  });
+  var totL=ents.reduce(function(a,x){return a+x.litres;},0);
+  document.getElementById('dLit').textContent=Math.round(totL);
+  document.getElementById('dCnt').textContent=ents.length;
+  document.getElementById('dShift').textContent=curShift();
+}
+function exportDieselCSV(){
+  if (!diesel.length){ alert('No data'); return; }
+  var csv='OpDate,Shift,Date,Time,Operator,Point,AssetType,AssetId,Litres,Hours,Slip\n';
+  diesel.forEach(function(x){ csv+=[x.opDate,x.shift,x.date,x.time,x.operator,x.point,x.assetType,x.assetId,x.litres,(x.hours||''),(x.slip||'')].join(',')+'\n'; });
+  dl(csv,'diesel_'+curOpDate()+'.csv');
+}
+
+/* =========================================================
+   SHAREPOINT SYNC (Microsoft Graph)
+   Requires 3 SharePoint lists on oregenesis > WCLTransportation:
+   - VehicleTripLog : Title(date),EntryTime,Timestamp,OpDate,Shift,Checkpoint,Supervisor,Vehicle,Job,Route,Event
+   - DieselLog      : Title(date),EntryTime,Timestamp,OpDate,Shift,Operator,FuelPoint,AssetType,AssetId,Litres,RunHours,SlipNo
+   - QuantityData   : Title(OpDate),Shift,Route,Vehicle,SlipNo,NetWeight
+   ========================================================= */
+var AAD_CLIENT_ID = '218ae300-7a39-48f1-ad89-bbadca020b29';
+var AAD_TENANT    = 'e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2';
+var SITE_PATH     = CONFIG.SITE;
+var GRAPH = 'https://graph.microsoft.com/v1.0/sites/'+SITE_PATH+'/lists/';
+var LIST = { trip:'VehicleTripLog', diesel:'DieselLog', qty:CONFIG.QTY_LIST };
+var GRAPH_SCOPES = ['Sites.ReadWrite.All','User.Read'];
+var msalApp=null;
+function authConfigured(){ return AAD_CLIENT_ID.indexOf('__')===-1 && typeof msal!=='undefined'; }
+async function initAuth(){
+  if (!authConfigured()) return;
+  msalApp=new msal.PublicClientApplication({
+    auth:{ clientId:AAD_CLIENT_ID, authority:'https://login.microsoftonline.com/'+AAD_TENANT,
+           redirectUri:window.location.origin+window.location.pathname },
+    cache:{ cacheLocation:'localStorage' }
+  });
+  await msalApp.initialize();
+  try{
+    var resp=await msalApp.handleRedirectPromise();
+    var acct=(resp&&resp.account)||msalApp.getActiveAccount()||msalApp.getAllAccounts()[0];
+    if (acct){ msalApp.setActiveAccount(acct); syncNow(true); }
+  }catch(e){ console.log('auth redirect error',e); }
+  refreshSyncUI();
+}
+function signIn(){
+  if (!authConfigured()){ alert('Sync not configured (Client ID missing)'); return; }
+  msalApp.loginRedirect({ scopes:GRAPH_SCOPES });
+}
+function signedInUser(){ if (!msalApp) return null; var a=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; return a?(a.name||a.username):null; }
+async function getToken(){
+  if (!msalApp) return null;
+  var acct=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; if (!acct) return null;
+  try{ var r=await msalApp.acquireTokenSilent({ scopes:GRAPH_SCOPES, account:acct }); return r.accessToken; }
+  catch(e){ return null; }
+}
+function tripFields(l){ return { Title:l.date, EntryTime:l.time, Timestamp:new Date(l.ts).toISOString(),
+  OpDate:l.opDate, Shift:l.shift, Checkpoint:l.cp, Supervisor:l.sup, Vehicle:l.veh, Job:l.job, Route:l.route, Event:l.ev }; }
+function dieselFields(x){ return { Title:x.date, EntryTime:x.time, Timestamp:new Date(x.ts).toISOString(),
+  OpDate:x.opDate, Shift:x.shift, Operator:x.operator, FuelPoint:x.point, AssetType:x.assetType, AssetId:x.assetId,
+  Litres:x.litres, RunHours:(x.hours!=null?x.hours:''), RunKm:(x.km!=null?x.km:''),
+  StartReading:(x.start!=null?x.start:''), StopReading:(x.stop!=null?x.stop:''), SlipNo:(x.slip||'') }; }
+function qtyFields(q){ return { Title:q.opDate, Shift:(q.shift||''), Route:q.route, Vehicle:(q.veh||''),
+  SlipNo:(q.slip||''), LoadWeight:(q.loadTe||0), DestWeight:(q.destTe!=null?q.destTe:''), NetWeight:(q.loadTe||0) }; }
+// ---- auto-detect quantity columns from an arbitrary SharePoint field object ----
+function detectQtyCols(keys){
+  function g(names){ for (var i=0;i<keys.length;i++){ var h=keys[i].toString().toLowerCase();
+    for (var j=0;j<names.length;j++){ if (h.indexOf(names[j])>=0) return keys[i]; } } return ''; }
+  return {
+    date:  g(['opdate','date','dinank','tarikh']) || 'Title',
+    shift: g(['shift','pali']),
+    route: g(['route','job','marg']),
+    veh:   g(['vehicle','truck','tipper','gaadi']),
+    load:  g(['loadweight','loadingweight','load wt','loadwt','gross','net weight','netweight','loading','weight1','wb1']),
+    dest:  g(['destweight','destinationweight','destination','unload','delivered','weight2','wb2']),
+    loc:   g(['location','point','type','weighbridge','wb','stage'])
+  };
+}
+// map one SharePoint quantity row -> normalized {opDate,shift,route,veh,loadTe,destTe}
+function mapQtyRow(f, c){
+  var route = normRoute(f[c.route]);
+  var d = f[c.date]; var opDate = (typeof d==='string' && /^\d{4}-\d{2}-\d{2}/.test(d)) ? d.slice(0,10) : normDate(d);
+  var loadTe=0, destTe=null;
+  if (c.load && f[c.load]!=='' && f[c.load]!=null) loadTe = parseFloat(String(f[c.load]).replace(/,/g,''))||0;
+  if (c.dest && f[c.dest]!=='' && f[c.dest]!=null) destTe = parseFloat(String(f[c.dest]).replace(/,/g,''))||0;
+  // single-weight-plus-location shape
+  if (!c.load && c.loc){
+    var w = parseFloat(String(f[g1(f,c)]||'').replace(/,/g,''))||0;
+    var loc=(f[c.loc]||'').toString().toLowerCase();
+    if (loc.indexOf('dest')>=0||loc.indexOf('unload')>=0||loc.indexOf('siding')>=0||loc.indexOf('rly')>=0) destTe=w; else loadTe=w;
+  }
+  return { opDate:opDate, shift:(c.shift?f[c.shift]:''), route:route, veh:(c.veh?f[c.veh]:''), loadTe:loadTe, destTe:destTe };
+}
+function g1(f,c){ // fallback single weight column when only location present
+  var keys=Object.keys(f);
+  for (var i=0;i<keys.length;i++){ var h=keys[i].toLowerCase(); if (h.indexOf('weight')>=0||h.indexOf('te')>=0||h.indexOf('qty')>=0||h.indexOf('tonne')>=0) return keys[i]; }
+  return c.load||'NetWeight';
+}
+// ---- workbook tab classification (D WB only; S WB ignored for now) ----
+function isDWB(name){ var s=(name||'').toLowerCase().replace(/[^a-z]/g,''); return s.indexOf('dwb')>=0; }
+function isSWB(name){ var s=(name||'').toLowerCase().replace(/[^a-z]/g,''); return s.indexOf('swb')>=0; }
+function sheetRoute(name){ var s=(name||'').toLowerCase();
+  if (s.indexOf('railway')>=0) return 'R2';      // "Sasti to Railway"
+  if (s.indexOf('dhoptala')>=0) return 'R1';     // "Dhoptala to Sasti"
+  return ''; }
+function findWeightCol(keys){
+  var c=detectQtyCols(keys);
+  if (c.load) return c;
+  for (var i=0;i<keys.length;i++){ var h=keys[i].toLowerCase();
+    if (h.indexOf('weight')>=0||h.indexOf('wt')>=0||h.indexOf('qty')>=0||h.indexOf('quantity')>=0||h.indexOf('tonne')>=0||h.indexOf('net')>=0||h.replace(/[^a-z]/g,'').indexOf('dwb')>=0){ c.load=keys[i]; break; } }
+  return c;
+}
+// build quantity records from the workbook, using ONLY D WB tabs, route from tab name
+function buildQtyFromWorkbook(rows){
+  if (!rows) return [];
+  var bySheet={};
+  rows.forEach(function(r){ var s=r._sheet||''; (bySheet[s]=bySheet[s]||[]).push(r); });
+  var out=[];
+  Object.keys(bySheet).forEach(function(sheet){
+    if (isSWB(sheet) || !isDWB(sheet)) return;         // only D WB tabs
+    var route=sheetRoute(sheet); if (!route) return;
+    var keys=Object.keys(bySheet[sheet][0]).filter(function(k){ return k!=='_sheet'; });
+    var c=findWeightCol(keys);
+    bySheet[sheet].forEach(function(r){
+      var d=r[c.date];
+      var opDate=(typeof d==='string' && /^\d{4}-\d{2}-\d{2}/.test(d)) ? d.slice(0,10) : normDate(d);
+      var w=c.load?(parseFloat(String(r[c.load]).replace(/,/g,''))||0):0;
+      if (w>0 && opDate) out.push({ opDate:opDate, shift:(c.shift?r[c.shift]:''), route:route, veh:(c.veh?r[c.veh]:''), loadTe:w, destTe:null });
+    });
+  });
+  return out;
+}
+
+var syncing=false;
+async function postItems(listName, items, toFields){
+  var token=await getToken(); if (!token) return {ok:0,fail:items.length,noauth:true};
+  var ok=0,fail=0;
+  for (var i=0;i<items.length;i++){
+    try{
+      var r=await fetch(GRAPH+listName+'/items',{ method:'POST',
+        headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+        body:JSON.stringify({ fields:toFields(items[i]) }) });
+      if (r.ok){ items[i].synced=true; ok++; } else { fail++; }
+    }catch(e){ fail++; break; }
+  }
+  return {ok:ok,fail:fail};
+}
+async function syncNow(silent){
+  if (!authConfigured()){ if(!silent) alert('Sync not configured'); return; }
+  if (syncing) return; syncing=true;
+  var pl=logs.filter(function(l){return !l.synced;});
+  var pd=diesel.filter(function(x){return !x.synced;});
+  var pq=qty.filter(function(q){return !q.synced;});
+  if (!pl.length && !pd.length && !pq.length){ syncing=false; if(!silent) alert('All synced ✓'); return; }
+  var token=await getToken();
+  if (!token){ syncing=false; if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
+  var r1=await postItems(LIST.trip, pl, tripFields);
+  var r2=await postItems(LIST.diesel, pd, dieselFields);
+  var r3=await postItems(LIST.qty, pq, qtyFields);
+  set(LS.log,logs); set(LS.dsl,diesel); set(LS.qty,qty);
+  syncing=false;
+  var ok=r1.ok+r2.ok+r3.ok, fail=r1.fail+r2.fail+r3.fail;
+  if (!silent) alert(ok+' entries synced ✓'+(fail?(' · '+fail+' failed, will retry'):''));
+  refreshSyncUI();
+}
+function refreshSyncUI(){
+  var user=signedInUser();
+  var pend=logs.filter(function(l){return !l.synced;}).length
+          +diesel.filter(function(x){return !x.synced;}).length
+          +qty.filter(function(q){return !q.synced;}).length;
+  var msg=!authConfigured() ? '⚠️ Sync not configured — entries stay on phone only'
+    : (user ? ('👤 '+user+'<br>'+(pend?('⏳ <b>'+pend+'</b> entries pending'):'✅ All synced'))
+            : '⚠️ Not signed in — entries stay on phone until sign-in');
+  var s=document.getElementById('syncStat'); if (s) s.innerHTML=msg;
+  var b=document.getElementById('signInBtn'); if (b) b.style.display=user?'none':'block';
+  var ds=document.getElementById('dashSync'); if (ds) ds.innerHTML=msg;
+  var db=document.getElementById('dashSignIn'); if (db) db.style.display=user?'none':'block';
+}
+setInterval(function(){ syncNow(true); }, 180000);
+
+/* ---- Graph READ (admin dashboard) ---- */
+async function graphGetAll(listName){
+  var token=await getToken(); if (!token) return null;
+  var url=GRAPH+listName+'/items?expand=fields&$top=999';
+  var out=[];
+  try{
+    while (url){
+      var r=await fetch(url,{ headers:{'Authorization':'Bearer '+token} });
+      if (!r.ok) return null;
+      var j=await r.json();
+      (j.value||[]).forEach(function(it){ if (it.fields) out.push(it.fields); });
+      url=j['@odata.nextLink']||null;
+    }
+  }catch(e){ return null; }
+  return out;
+}
+
+/* ---- LIVE read of the shared SharePoint Excel workbook (auto-updates) ---- */
+function encodeShareUrl(u){
+  var b64=btoa(unescape(encodeURIComponent(u)));
+  return 'u!'+b64.replace(/=+$/,'').replace(/\//g,'_').replace(/\+/g,'-');
+}
+async function readWorkbook(){
+  var token=await getToken(); if (!token) return null;
+  var base='https://graph.microsoft.com/v1.0/shares/'+encodeShareUrl(CONFIG.QTY_XLSX_URL)+'/driveItem/workbook';
+  try{
+    var wsR=await fetch(base+'/worksheets',{ headers:{'Authorization':'Bearer '+token} });
+    if (!wsR.ok) return null;
+    var sheets=((await wsR.json()).value)||[];
+    var all=[];
+    for (var i=0;i<sheets.length;i++){
+      var name=sheets[i].name;
+      var rR=await fetch(base+"/worksheets('"+encodeURIComponent(name)+"')/usedRange(valuesOnly=true)?$select=values",
+        { headers:{'Authorization':'Bearer '+token} });
+      if (!rR.ok) continue;
+      var vals=((await rR.json()).values)||[];
+      if (vals.length<2) continue;
+      var hdr=vals[0].map(function(h){ return (h==null?'':h).toString().trim(); });
+      for (var r=1;r<vals.length;r++){
+        var row=vals[r]; if (!row) continue;
+        var obj={ _sheet:name }; var blank=true;
+        hdr.forEach(function(h,ci){ obj[h]=row[ci]; if (row[ci]!=='' && row[ci]!=null) blank=false; });
+        if (!blank) all.push(obj);
+      }
+    }
+    return all;
+  }catch(e){ console.log('workbook read error',e); return null; }
+}
+
+/* =========================================================
+   ADMIN — dashboard data (pulled from SharePoint, fallback local)
+   ========================================================= */
+var DASH = { trips:[], diesel:[], qty:[], loadedFrom:'local' };
+function setToday(){ document.getElementById('dashDate').value=curOpDate(); }
+async function loadDash(){
+  if (authConfigured() && signedInUser()){
+    var t=await graphGetAll(LIST.trip), d=await graphGetAll(LIST.diesel);
+    // quantity: live workbook (preferred) or SharePoint list
+    var q=null;
+    if (CONFIG.QTY_SOURCE==='WORKBOOK') q=await readWorkbook();
+    if (q===null) q=await graphGetAll(LIST.qty);
+    if (t!==null || q!==null){
+      DASH.trips = (t||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, veh:f.Vehicle, job:f.Job, route:f.Route, cp:f.Checkpoint, ev:f.Event }; });
+      DASH.diesel = (d||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, assetType:f.AssetType, assetId:f.AssetId, litres:+f.Litres||0, hours:(f.RunHours!==''&&f.RunHours!=null)?+f.RunHours:null, km:(f.RunKm!==''&&f.RunKm!=null)?+f.RunKm:null, route:f.Route||'' }; });
+      if (CONFIG.QTY_SOURCE==='WORKBOOK'){
+        DASH.qty = buildQtyFromWorkbook(q);   // D WB tabs only, route from tab name
+      } else {
+        var qc = (q&&q.length)?detectQtyCols(Object.keys(q[0])):null;
+        DASH.qty = (q||[]).map(function(f){ return mapQtyRow(f, qc||detectQtyCols(Object.keys(f))); });
+      }
+      DASH.loadedFrom = (CONFIG.QTY_SOURCE==='WORKBOOK'?'SharePoint + Excel (D WB)':'SharePoint');
+      renderDash(); return;
+    }
+  }
+  // fallback: local only (this device's own entries + imported qty)
+  DASH.trips = logs.map(function(l){ return {opDate:l.opDate,shift:l.shift,veh:l.veh,job:l.job,route:l.route,cp:l.cp,ev:l.ev}; });
+  DASH.diesel = diesel.map(function(x){ return {opDate:x.opDate,shift:x.shift,assetType:x.assetType,assetId:x.assetId,litres:x.litres,hours:x.hours||0,route:x.route||''}; });
+  DASH.qty = qty.map(function(q){ return {opDate:q.opDate,shift:q.shift,route:q.route,veh:q.veh,loadTe:q.loadTe||0,destTe:(q.destTe!=null?q.destTe:null)}; });
+  DASH.loadedFrom = (authConfigured()&&signedInUser())?'SharePoint (empty)':'local device only';
+  renderDash();
+}
+// trip = loaded arrival at destination: R1 => CHP + Job1 + IN ; R2 => Siding + Job2 + IN
+function isTrip(l){
+  if (l.ev!=='IN') return false;
+  if (l.route==='R1') return l.cp==='CHP' && l.job==='Job 1';
+  if (l.route==='R2') return l.cp==='Siding' && l.job==='Job 2';
+  return false;
+}
+// Trips attributed to the shift/day of DISPATCH (loaded OUT from source).
+// Rule: dispatched before 23:00 counts in that day's shift (e.g. Shift II), regardless of arrival time.
+var DASH_ATRIPS=[];
+function computeAttributedTrips(){
+  DASH_ATRIPS = reconstructTripsFrom(DASH.trips, null).map(function(t){
+    var disp = t.srcOut || t.srcIn || t.dstIn || t.dstOut;   // dispatch time preferred
+    t.day   = disp ? opDateOf(new Date(disp)) : null;
+    t.shift = disp ? shiftOf(new Date(disp)) : null;
+    t.route = routeOfJob(t.job);
+    t.counts = !!(t.srcOut || t.dstIn || t.dstOut);          // loaded/dispatched = a real trip
+    return t;
+  });
+}
+function tripsFor(route, day, shift){
+  return DASH_ATRIPS.filter(function(t){
+    return t.counts && t.route===route && (!day||t.day===day) && (!shift||t.shift===shift);
+  }).length;
+}
+// primary tonnage = LOADING weighbridge (counts toward target)
+function tonsFor(route, day, shift){
+  return DASH.qty.filter(function(q){ return q.route===route && (!day||q.opDate===day) && (!shift||q.shift===shift); })
+    .reduce(function(a,q){ return a+(+q.loadTe||0); },0);
+}
+// delivered tonnage = DESTINATION weighbridge (reconciliation)
+function deliveredFor(route, day, shift){
+  return DASH.qty.filter(function(q){ return q.route===route && q.destTe!=null && (!day||q.opDate===day) && (!shift||q.shift===shift); })
+    .reduce(function(a,q){ return a+(+q.destTe||0); },0);
+}
+function fmt(n,d){ d=d||0; return (isFinite(n)?n:0).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+
+/* ---- quantity totals by date ---- */
+function renderQtyByDate(){
+  var host=document.getElementById('dashQtyDate'); if (!host) return;
+  var byDate={};
+  DASH.qty.forEach(function(q){ var d=byDate[q.opDate]=byDate[q.opDate]||{R1:0,R2:0}; if(byDate[q.opDate][q.route]!=null) byDate[q.opDate][q.route]+=(+q.loadTe||0); });
+  var dates=Object.keys(byDate).filter(function(d){return d;}).sort().reverse();
+  if (!dates.length){ host.innerHTML='<div class="muted-note">No quantity data / कोई वज़न डेटा नहीं</div>'; return; }
+  var h='<table class="dash"><thead><tr><th class="l">Date</th><th>Job 1 (R1)</th><th>Job 2 (R2)</th><th>Total Te</th></tr></thead><tbody>';
+  var t1=0,t2=0;
+  dates.forEach(function(d){ var x=byDate[d]; t1+=x.R1; t2+=x.R2;
+    h+='<tr><td class="l">'+d+'</td><td>'+fmt(x.R1,0)+'</td><td>'+fmt(x.R2,0)+'</td><td style="font-weight:700">'+fmt(x.R1+x.R2,0)+'</td></tr>'; });
+  h+='<tr style="font-weight:700;border-top:2px solid #cdd7e2"><td class="l">TOTAL</td><td>'+fmt(t1,0)+'</td><td>'+fmt(t2,0)+'</td><td>'+fmt(t1+t2,0)+'</td></tr>';
+  host.innerHTML=h+'</tbody></table>';
+}
+/* ---- quantity per vehicle (selected day) ---- */
+function renderQtyByVehicle(day){
+  var host=document.getElementById('dashQtyVeh'); if (!host) return;
+  var byVeh={};
+  DASH.qty.filter(function(q){ return q.opDate===day && q.veh; }).forEach(function(q){
+    var v=byVeh[q.veh]=byVeh[q.veh]||{te:0,route:q.route}; v.te+=(+q.loadTe||0); });
+  var keys=Object.keys(byVeh);
+  if (!keys.length){ host.innerHTML='<div class="muted-note">No per-vehicle quantity for this day (the Excel tab may hold route-level totals only)</div>'; return; }
+  var jobOf={}; vehicles.forEach(function(v){ jobOf[v.num]=v.job; });
+  function jobOfVeh(k){ return jobOf[k] || (byVeh[k].route==='R2'?'Job 2':'Job 1'); }
+  function tbl(job,title,dot){
+    var ks=keys.filter(function(k){ return jobOfVeh(k)===job; }).sort();
+    var h='<div class="jobhead" style="margin:6px 2px 6px"><span class="dot" style="background:'+dot+'"></span><span class="t">'+title+'</span></div>';
+    if (!ks.length) return h+'<div class="muted-note" style="margin-bottom:8px">none</div>';
+    var tot=0; h+='<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Quantity (Te)</th></tr></thead><tbody>';
+    ks.forEach(function(k){ tot+=byVeh[k].te; h+='<tr><td class="l">'+k+'</td><td>'+fmt(byVeh[k].te,1)+'</td></tr>'; });
+    return h+'<tr style="font-weight:700"><td class="l">Total</td><td>'+fmt(tot,1)+'</td></tr></tbody></table>';
+  }
+  host.innerHTML = tbl('Job 1','JOB 1 — Dhoptala → CHP','#1565c0') + '<div style="height:12px"></div>' + tbl('Job 2','JOB 2 — SOCM → Siding','#7b1fa2');
+}
+
+function renderDash(){
+  var day=document.getElementById('dashDate').value || curOpDate();
+  computeAttributedTrips();
+  document.getElementById('dashSync').innerHTML='Data source: <b>'+DASH.loadedFrom+'</b> · '+(signedInUser()||'not signed in');
+  // ---- day scorecards ----
+  var host=document.getElementById('dashDay'); host.innerHTML='';
+  var routes=[{k:'R1',cls:'',name:'ROUTE 1 — Feeding',sub:'Dhoptala → CHP Hopper'},
+              {k:'R2',cls:'r2',name:'ROUTE 2 — Dispatch',sub:'SOCM → Ballarpur Siding'}];
+  var combTr=0, combTe=0;
+  routes.forEach(function(R){
+    var tr=tripsFor(R.k,day,null), te=tonsFor(R.k,day,null);
+    combTr+=tr; combTe+=te;
+    host.appendChild(scoreCard(R.cls,R.name,R.sub,tr,te,day));
+  });
+  host.appendChild(scoreCard('combined','BOTH ROUTES','Combined daily target',combTr,combTe,day,2));
+  // ---- monthly ----
+  renderMonth(day);
+  // ---- quantity by date + by vehicle ----
+  renderQtyByDate();
+  renderQtyByVehicle(day);
+  // ---- vehicle drill-down ----
+  fillVehFilter();
+  renderVehDrill();
+  // ---- full trip-cycle timing ----
+  renderTiming(day);
+  // ---- per vehicle ----
+  renderVehTable(day);
+  // ---- fuel ----
+  renderFuel(day);
+}
+function scoreCard(cls,name,sub,trips,te,day,mult){
+  mult=mult||1;
+  var target=CONFIG.DAILY_TARGET_TE*mult;
+  var pct=target?Math.min(100,Math.round(te/target*100)):0;
+  var behind=te<target;
+  var tpt = trips? (te/trips):0;
+  var rkeys = (cls==='combined')?['R1','R2']:[(cls==='r2'?'R2':'R1')];
+  var delivered=0; rkeys.forEach(function(rk){ delivered+=deliveredFor(rk,day,null); });
+  var variance = te - delivered; // loading - destination = transit variance/loss
+  var shiftRows='';
+  CONFIG.SHIFTS.forEach(function(s){
+    var str=0,ste=0;
+    (cls==='combined'?['R1','R2']:[ (cls==='r2'?'R2':'R1') ]).forEach(function(rk){
+      str+=tripsFor(rk,day,s.id); ste+=tonsFor(rk,day,s.id);
+    });
+    shiftRows+='<div class="kv"><span class="k">'+s.label+' ('+s.start+'–'+s.end+')</span><span class="v">'+str+' trips · '+fmt(ste,1)+' Te</span></div>';
+  });
+  var c=document.createElement('div'); c.className='card scorecard '+cls;
+  c.innerHTML='<div class="sc-title">'+name+'</div><div class="sc-sub">'+sub+'</div>'
+    +'<div class="bar"><div class="fill'+(behind?' behind':'')+'" style="width:'+pct+'%"></div></div>'
+    +'<div class="kv"><span class="k">Quantity (D WB)</span><span class="v '+(behind?'bad':'good')+'">'+fmt(te,1)+' / '+fmt(target,0)+' Te ('+pct+'%)</span></div>'
+    +'<div class="kv"><span class="k">Trips today (live)</span><span class="v">'+trips+'</span></div>'
+    +'<div class="kv"><span class="k">Avg tonnes / trip</span><span class="v">'+fmt(tpt,1)+' Te</span></div>'
+    +'<div style="margin-top:6px;border-top:1px dashed #e3e9f0;padding-top:4px">'+shiftRows+'</div>';
+  return c;
+}
+
+/* ---- month-on-month shortfall + catch-up ---- */
+function daysBetween(a,b){ return Math.round((b-a)/86400000); }
+function parseYMD(s){ var p=s.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
+function monthsSinceStart(uptoDay){
+  var start=parseYMD(CONFIG.OP_START), end=parseYMD(uptoDay);
+  var res=[], y=start.getFullYear(), m=start.getMonth();
+  while (y<end.getFullYear() || (y===end.getFullYear() && m<=end.getMonth())){
+    res.push({y:y,m:m}); m++; if (m>11){ m=0; y++; }
+  }
+  return res;
+}
+function renderMonth(day){
+  var host=document.getElementById('dashMonth'); host.innerHTML='';
+  var start=parseYMD(CONFIG.OP_START), viewDay=parseYMD(day);
+  var months=monthsSinceStart(day);
+  months.forEach(function(M){
+    var mStart=new Date(M.y,M.m,1), mEnd=new Date(M.y,M.m+1,0); // last day of month
+    var opStartInM = (mStart<start)?start:mStart;              // op days begin at OP_START
+    var opEndInM   = mEnd;
+    var totalDays  = daysBetween(opStartInM,opEndInM)+1;        // operating days in month
+    var elapsedEnd = (viewDay<opEndInM)?viewDay:opEndInM;
+    var elapsedDays= Math.max(0, daysBetween(opStartInM,elapsedEnd)+1);
+    var remainDays = Math.max(0, totalDays-elapsedDays);
+    var monLabel = mStart.toLocaleDateString('en-IN',{month:'long',year:'numeric'});
+    var card=document.createElement('div'); card.className='card';
+    var rows='';
+    var combReq=0, combShort=0;
+    [['R1','Route 1'],['R2','Route 2']].forEach(function(rr){
+      var achieved=DASH.qty.filter(function(q){
+        return q.route===rr[0] && q.opDate>=ymd(opStartInM) && q.opDate<=ymd(elapsedEnd);
+      }).reduce(function(a,q){return a+(+q.loadTe||0);},0);
+      var targetToDate=CONFIG.DAILY_TARGET_TE*elapsedDays;
+      var monthTarget=CONFIG.DAILY_TARGET_TE*totalDays;
+      var shortfall=targetToDate-achieved;
+      var reqDaily=remainDays>0?((monthTarget-achieved)/remainDays):0;
+      combReq+=reqDaily; combShort+=shortfall;
+      rows+='<div style="margin-top:6px;border-top:1px solid #eef2f7;padding-top:6px">'
+        +'<div class="kv"><span class="k"><b>'+rr[1]+'</b></span><span class="v">'+fmt(achieved,0)+' / '+fmt(monthTarget,0)+' Te</span></div>'
+        +'<div class="kv"><span class="k">Shortfall to date</span><span class="v '+(shortfall>0?'bad':'good')+'">'+(shortfall>0?'-':'+')+fmt(Math.abs(shortfall),0)+' Te</span></div>'
+        +'<div class="kv"><span class="k">Req. daily for rest of month</span><span class="v '+(reqDaily>CONFIG.DAILY_TARGET_TE?'bad':'good')+'">'+fmt(reqDaily,0)+' Te/day</span></div>';
+      rows+='</div>';
+    });
+    card.innerHTML='<div class="sc-title">'+monLabel+'</div>'
+      +'<div class="sc-sub">Operating days: '+elapsedDays+' elapsed / '+totalDays+' total · '+remainDays+' remaining</div>'
+      +rows
+      +'<div style="margin-top:6px;border-top:1px dashed #cdd7e2;padding-top:6px">'
+      +'<div class="kv"><span class="k"><b>Both routes — req. daily now</b></span><span class="v '+(combReq>2*CONFIG.DAILY_TARGET_TE?'bad':'good')+'">'+fmt(combReq,0)+' Te/day</span></div></div>';
+    host.appendChild(card);
+  });
+}
+
+/* ---- full trip-cycle timing (Source -> Destination), reconstructed across checkpoints ---- */
+function cpRole(job){ return job==='Job 1' ? {src:'Dhoptala',dst:'CHP'} : {src:'CHP',dst:'Siding'}; }
+function tfmt(ts){ return ts ? new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '—'; }
+function reconstructTripsFrom(events, day){
+  var byVeh={};
+  events.filter(function(l){ return (!day||l.opDate===day) && l.ts; }).forEach(function(l){ (byVeh[l.veh]=byVeh[l.veh]||[]).push(l); });
+  var out=[];
+  Object.keys(byVeh).forEach(function(veh){
+    var evs=byVeh[veh].slice().sort(function(a,b){ return a.ts-b.ts; });
+    var job=evs[0].job, roles=cpRole(job), cur=null;
+    function fresh(){ return {veh:veh,job:job,srcIn:null,srcOut:null,dstIn:null,dstOut:null}; }
+    evs.forEach(function(e){
+      if (e.cp===roles.src && e.ev==='IN'){ if(cur) out.push(cur); cur=fresh(); cur.srcIn=e.ts; }
+      else if (e.cp===roles.src && e.ev==='OUT'){ if(!cur) cur=fresh(); cur.srcOut=e.ts; }
+      else if (e.cp===roles.dst && e.ev==='IN'){ if(!cur) cur=fresh(); cur.dstIn=e.ts; }
+      else if (e.cp===roles.dst && e.ev==='OUT'){ if(!cur) cur=fresh(); cur.dstOut=e.ts; out.push(cur); cur=null; }
+    });
+    if (cur) out.push(cur);
+  });
+  return out;
+}
+function reconstructTrips(day){ return reconstructTripsFrom(DASH.trips, day); }
+function timingTable(trips, title, sub, dotColor){
+  var totSum=0, totN=0;
+  trips.forEach(function(t){ if (t.srcIn&&t.dstOut){ totSum+=(t.dstOut-t.srcIn); totN++; } });
+  var h='<div class="jobhead" style="margin:6px 2px 6px"><span class="dot" style="background:'+dotColor+'"></span>'
+    +'<span><span class="t">'+title+'</span><br><span class="r">'+sub+'</span></span></div>';
+  if (!trips.length) return h+'<div class="muted-note" style="margin-bottom:10px">No trips for this day / कोई ट्रिप नहीं</div>';
+  h+='<div class="muted-note">'+trips.length+' trips · avg total '+durfmt(totN?totSum/totN:null)+'</div>'
+    +'<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Src IN</th><th>Src OUT</th><th>Dest IN</th><th>Dest OUT</th><th>Load</th><th>Transit</th><th>Unload</th><th>Total</th></tr></thead><tbody>';
+  trips.forEach(function(t){
+    var load=(t.srcIn&&t.srcOut)?t.srcOut-t.srcIn:null;
+    var transit=(t.srcOut&&t.dstIn)?t.dstIn-t.srcOut:null;
+    var unload=(t.dstIn&&t.dstOut)?t.dstOut-t.dstIn:null;
+    var total=(t.srcIn&&t.dstOut)?t.dstOut-t.srcIn:null;
+    h+='<tr><td class="l">'+t.veh+'</td>'
+      +'<td>'+tfmt(t.srcIn)+'</td><td>'+tfmt(t.srcOut)+'</td><td>'+tfmt(t.dstIn)+'</td><td>'+tfmt(t.dstOut)+'</td>'
+      +'<td>'+durfmt(load)+'</td><td>'+durfmt(transit)+'</td><td>'+durfmt(unload)+'</td>'
+      +'<td'+(total?' style="font-weight:700;color:var(--blue)"':'')+'>'+durfmt(total)+'</td></tr>';
+  });
+  return h+'</tbody></table>';
+}
+function renderTiming(day){
+  var host=document.getElementById('dashTiming');
+  var all=reconstructTrips(day).sort(function(a,b){ return (b.srcIn||b.dstOut||0)-(a.srcIn||a.dstOut||0); });
+  if (!all.length){ host.innerHTML='<div class="muted-note">No trips for this day / इस दिन कोई ट्रिप नहीं</div>'; return; }
+  var j1=all.filter(function(t){return t.job==='Job 1';});
+  var j2=all.filter(function(t){return t.job==='Job 2';});
+  host.innerHTML = '<div class="muted-note">Full cycle: empty IN at source → leaves destination (HH:MM)</div>'
+    + timingTable(j1,'JOB 1 — Feeding','Dhoptala → CHP Hopper','#1565c0')
+    + '<div style="height:16px"></div>'
+    + timingTable(j2,'JOB 2 — Dispatch','SOCM → Ballarpur Siding','#7b1fa2');
+}
+
+/* ---- vehicle drill-down: trips + fuel till date, filter by vehicle ---- */
+function fillVehFilter(){
+  var sel=document.getElementById('vehFilter'); if (!sel || sel.dataset.filled) return;
+  sel.innerHTML=vehicles.map(function(v){ return '<option value="'+v.num+'">'+v.num+' ('+v.job+')</option>'; }).join('');
+  sel.dataset.filled='1';
+}
+function renderVehDrill(){
+  var sel=document.getElementById('vehFilter'); if (!sel) return;
+  var host=document.getElementById('dashVehDrill');
+  var veh=sel.value || (vehicles[0]&&vehicles[0].num); if (!veh){ host.innerHTML=''; return; }
+  var trips=DASH_ATRIPS.filter(function(t){ return t.veh===veh && t.counts; });
+  var fuel=DASH.diesel.filter(function(x){ return x.assetId===veh; });
+  var totTrips=trips.length, totFuel=fuel.reduce(function(a,x){ return a+x.litres; },0);
+  var v0=vehicles.filter(function(v){ return v.num===veh; })[0]||{};
+  var route=v0.job==='Job 2'?'R2':'R1', km=CONFIG.ROUTE_KM[route]||0;
+  var kmpl=(totFuel>0&&km>0)?(totTrips*km/totFuel):null;
+  var byDate={};
+  trips.forEach(function(t){ if(t.day){ (byDate[t.day]=byDate[t.day]||{tr:0,f:0}).tr++; } });
+  fuel.forEach(function(x){ (byDate[x.opDate]=byDate[x.opDate]||{tr:0,f:0}).f+=x.litres; });
+  var dates=Object.keys(byDate).filter(function(d){return d;}).sort().reverse();
+  var h='<div class="stat" style="margin-top:12px">'
+    +'<div class="box"><div class="n">'+totTrips+'</div><div class="l">Trips till date</div></div>'
+    +'<div class="box"><div class="n">'+fmt(totFuel,0)+'</div><div class="l">Diesel issued (L)</div></div>'
+    +'<div class="box"><div class="n">'+(totTrips?fmt(totFuel/totTrips,1):'—')+'</div><div class="l">L / trip</div></div>'
+    +'</div>';
+  h+= (kmpl!=null) ? '<div class="muted-note">KMPL: <b>'+fmt(kmpl,2)+'</b> ('+totTrips+' trips × '+km+' km ÷ '+fmt(totFuel,0)+' L)</div>'
+      : (totFuel>0?'<div class="muted-note">Set ROUTE_KM['+route+'] in CONFIG for KMPL</div>':'');
+  h+='<table class="dash" style="margin-top:8px"><thead><tr><th class="l">Date</th><th>Trips</th><th>Diesel L</th></tr></thead><tbody>';
+  if (!dates.length) h+='<tr><td class="l" colspan="3" style="text-align:left;color:var(--muted)">No activity yet</td></tr>';
+  dates.forEach(function(d){ var x=byDate[d]; h+='<tr><td class="l">'+d+'</td><td>'+x.tr+'</td><td>'+fmt(x.f,0)+'</td></tr>'; });
+  h+='</tbody></table>';
+  host.innerHTML=h;
+}
+
+/* ---- per-vehicle table ---- */
+function renderVehTable(day){
+  var host=document.getElementById('dashVeh');
+  var rows=vehicles.map(function(v){
+    var route=routeOfJob(v.job);
+    var tr=DASH_ATRIPS.filter(function(t){ return t.veh===v.num && t.counts && t.day===day; }).length;
+    var lit=DASH.diesel.filter(function(x){ return x.assetType==='TIPPER'&&x.assetId===v.num&&x.opDate===day; }).reduce(function(a,x){return a+x.litres;},0);
+    var lpt=tr?lit/tr:0;
+    var km=CONFIG.ROUTE_KM[route]||0;
+    var kmpl=(lit>0&&km>0)?(tr*km/lit):null;
+    return {num:v.num,job:v.job,route:route,tr:tr,lit:lit,lpt:lpt,kmpl:kmpl};
+  }).filter(function(r){ return true; });
+  var h='<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Job</th><th>Trips</th><th>Diesel L</th><th>L/trip</th><th>KMPL</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    h+='<tr><td class="l">'+r.num+'</td><td><span class="tag '+(r.job==='Job 1'?'j1':'j2')+'">'+r.job+'</span></td>'
+      +'<td>'+r.tr+'</td><td>'+fmt(r.lit,0)+'</td><td>'+(r.lit?fmt(r.lpt,1):'—')+'</td>'
+      +'<td>'+(r.kmpl!=null?fmt(r.kmpl,2):(r.lit?'set km':'—'))+'</td></tr>';
+  });
+  h+='</tbody></table>';
+  host.innerHTML=h;
+}
+
+/* ---- fuel averages (machines) ---- */
+function renderFuel(day){
+  var host=document.getElementById('dashFuel');
+  var h='<div class="muted-note">Machine average = total diesel ÷ hours run (from meter readings). Trailer = km per litre.</div>'
+    +'<table class="dash"><thead><tr><th class="l">Machine</th><th>Diesel L</th><th>Run</th><th>Average</th></tr></thead><tbody>';
+  MACHINES.forEach(function(m){
+    var ent=DASH.diesel.filter(function(x){ return x.assetType==='MACHINE'&&x.assetId===m.id&&x.opDate===day; });
+    var lit=ent.reduce(function(a,x){return a+x.litres;},0);
+    if (m.unit==='KM'){
+      var km=ent.reduce(function(a,x){return a+(x.km||0);},0);
+      var kmpl=(km>0&&lit>0)?km/lit:null;
+      h+='<tr><td class="l">'+m.name+'</td><td>'+fmt(lit,0)+'</td><td>'+fmt(km,1)+' km</td><td>'+(kmpl!=null?fmt(kmpl,2)+' km/L':'—')+'</td></tr>';
+    } else {
+      var hrs=ent.reduce(function(a,x){return a+(x.hours||0);},0);
+      var lph=(hrs>0&&lit>0)?lit/hrs:null;
+      h+='<tr><td class="l">'+m.name+'</td><td>'+fmt(lit,0)+'</td><td>'+fmt(hrs,1)+' hr</td><td>'+(lph!=null?fmt(lph,1)+' L/hr':'—')+'</td></tr>';
+    }
+  });
+  h+='</tbody></table>';
+  var tl=DASH.diesel.filter(function(x){return x.assetType==='TIPPER'&&x.opDate===day;}).reduce(function(a,x){return a+x.litres;},0);
+  var tt=tripsFor('R1',day,null)+tripsFor('R2',day,null);
+  h+='<div class="muted-note" style="margin-top:8px">Tippers (all): '+fmt(tl,0)+' L over '+tt+' trips = <b>'+(tt?fmt(tl/tt,1):'—')+' L/trip</b></div>';
+  host.innerHTML=h;
+}
+
+/* =========================================================
+   EXCEL IMPORT (quantity) — auto-detect columns
+   ========================================================= */
+var xlRows=null, xlHeaders=null;
+function onXlPick(ev){
+  var f=ev.target.files[0]; if (!f) return;
+  var rd=new FileReader();
+  rd.onload=function(e){
+    var wb=XLSX.read(e.target.result,{type:'array'});
+    var ws=wb.Sheets[wb.SheetNames[0]];
+    var json=XLSX.utils.sheet_to_json(ws,{defval:''});
+    if (!json.length){ alert('Empty sheet'); return; }
+    xlRows=json; xlHeaders=Object.keys(json[0]);
+    buildMapUI();
+  };
+  rd.readAsArrayBuffer(f);
+}
+function guess(hs,names){
+  for (var i=0;i<hs.length;i++){ var h=hs[i].toString().toLowerCase();
+    for (var j=0;j<names.length;j++){ if (h.indexOf(names[j])>=0) return hs[i]; } }
+  return '';
+}
+function buildMapUI(){
+  var m=document.getElementById('xlMap');
+  var g={ date:guess(xlHeaders,['date','dinank','tarikh']),
+    shift:guess(xlHeaders,['shift','pali']),
+    route:guess(xlHeaders,['route','job','marg']),
+    veh:guess(xlHeaders,['vehicle','truck','tipper','gaadi','number','no.']),
+    slip:guess(xlHeaders,['slip','bill','challan']),
+    wtLoad:guess(xlHeaders,['loadweight','loading','load wt','loadwt','gross','net weight','netweight','weight1','wb1','loaded']),
+    wtDest:guess(xlHeaders,['destweight','destination','unload','delivered','weight2','wb2','received']) };
+  if (!g.wtLoad) g.wtLoad=guess(xlHeaders,['weight','tonne','tonn','te','qty','quantity','wt']);
+  function opts(sel){ return xlHeaders.map(function(h){ return '<option value="'+h+'"'+(h===sel?' selected':'')+'>'+h+'</option>'; }).join(''); }
+  m.innerHTML='<div class="muted-note" style="margin-top:10px">Detected '+xlRows.length+' rows. Confirm column mapping:</div>'
+    +field('Date',opts(g.date),'mapDate')
+    +field('Shift (optional)','<option value="">— none —</option>'+opts(g.shift),'mapShift')
+    +field('Route / Job',opts(g.route),'mapRoute')
+    +field('Vehicle (optional)','<option value="">— none —</option>'+opts(g.veh),'mapVeh')
+    +field('Slip (optional)','<option value="">— none —</option>'+opts(g.slip),'mapSlip')
+    +field('Loading weight — Te (primary)',opts(g.wtLoad),'mapWtLoad')
+    +field('Destination weight — Te (optional)','<option value="">— none —</option>'+opts(g.wtDest),'mapWtDest')
+    +'<button class="btn sm" onclick="previewXl()">Preview / प्रीव्यू</button>';
+}
+function field(lbl,optionsHtml,id){ return '<label>'+lbl+'</label><select id="'+id+'">'+optionsHtml+'</select>'; }
+function normRoute(v){
+  var s=(v||'').toString().toLowerCase();
+  if (s.indexOf('2')>=0||s.indexOf('socm')>=0||s.indexOf('siding')>=0||s.indexOf('r2')>=0) return 'R2';
+  if (s.indexOf('1')>=0||s.indexOf('dhop')>=0||s.indexOf('chp')>=0||s.indexOf('hopper')>=0||s.indexOf('r1')>=0) return 'R1';
+  return s.toUpperCase();
+}
+function normDate(v){
+  if (typeof v==='number'){ var dc=XLSX.SSF.parse_date_code(v); if (dc) return dc.y+'-'+String(dc.m).padStart(2,'0')+'-'+String(dc.d).padStart(2,'0'); }
+  var s=v.toString().trim();
+  var m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/); // dd/mm/yyyy
+  if (m){ var y=m[3].length===2?('20'+m[3]):m[3]; return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0'); }
+  var m2=s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/); // yyyy-mm-dd
+  if (m2){ return m2[1]+'-'+m2[2].padStart(2,'0')+'-'+m2[3].padStart(2,'0'); }
+  return s;
+}
+var parsedQty=null;
+function previewXl(){
+  var cD=val('mapDate'),cS=val('mapShift'),cR=val('mapRoute'),cV=val('mapVeh'),cSl=val('mapSlip'),cWL=val('mapWtLoad'),cWD=val('mapWtDest');
+  parsedQty=xlRows.map(function(r){
+    return { opDate:normDate(r[cD]), shift:cS?r[cS]:'', route:normRoute(r[cR]),
+      veh:cV?r[cV]:'', slip:cSl?r[cSl]:'',
+      loadTe:parseFloat(String(r[cWL]).replace(/,/g,''))||0,
+      destTe:(cWD?(parseFloat(String(r[cWD]).replace(/,/g,''))||0):null), synced:false };
+  }).filter(function(q){ return q.loadTe>0 && q.opDate; });
+  var host=document.getElementById('xlPreview');
+  var byRoute={R1:0,R2:0}; parsedQty.forEach(function(q){ if(byRoute[q.route]!=null) byRoute[q.route]+=q.loadTe; });
+  var h='<div class="card"><h3 style="margin-top:0">Preview — '+parsedQty.length+' valid rows</h3>'
+    +'<div class="kv"><span class="k">R1 loaded total</span><span class="v">'+fmt(byRoute.R1,1)+' Te</span></div>'
+    +'<div class="kv"><span class="k">R2 loaded total</span><span class="v">'+fmt(byRoute.R2,1)+' Te</span></div>'
+    +'<table class="dash" style="margin-top:8px"><thead><tr><th class="l">Date</th><th>Shift</th><th>Route</th><th class="l">Vehicle</th><th>Load Te</th><th>Dest Te</th></tr></thead><tbody>';
+  parsedQty.slice(0,12).forEach(function(q){ h+='<tr><td class="l">'+q.opDate+'</td><td>'+(q.shift||'—')+'</td><td>'+q.route+'</td><td class="l">'+(q.veh||'—')+'</td><td>'+fmt(q.loadTe,1)+'</td><td>'+(q.destTe!=null?fmt(q.destTe,1):'—')+'</td></tr>'; });
+  h+='</tbody></table>'+(parsedQty.length>12?'<div class="muted-note">…and '+(parsedQty.length-12)+' more</div>':'')
+    +'<button class="btn green" onclick="commitQty()">✔ Save & push to SharePoint / सेव करें</button></div>';
+  host.innerHTML=h;
+}
+function val(id){ var e=document.getElementById(id); return e?e.value:''; }
+function commitQty(){
+  if (!parsedQty||!parsedQty.length){ alert('Nothing to save'); return; }
+  // replace any existing qty rows for the same opDate+route to avoid double counting on re-import
+  var keys={}; parsedQty.forEach(function(q){ keys[q.opDate+'|'+q.route]=true; });
+  qty=qty.filter(function(q){ return !keys[q.opDate+'|'+q.route]; });
+  qty=qty.concat(parsedQty); set(LS.qty,qty);
+  alert(parsedQty.length+' rows saved. Syncing to SharePoint…');
+  syncNow(false);
+  document.getElementById('xlPreview').innerHTML='';
+  document.getElementById('xlMap').innerHTML='';
+  document.getElementById('xlFile').value='';
+}
+
+/* =========================================================
+   SETTINGS
+   ========================================================= */
 function renderSet(){
-  document.getElementById('setInfo').innerHTML =
-    '<b>Supervisor:</b> '+cfg.sup+'<br><b>Checkpoint:</b> '+cfg.cp+'<br><b>Total logged entries:</b> '+logs.length;
-  var pend = logs.filter(function(l){ return !l.synced; }).length;
-  var user = signedInUser();
-  document.getElementById('syncStat').innerHTML = !authConfigured()
-    ? '⚠️ Sync not configured (Client ID missing) — entries stay on phone only'
-    : (user
-        ? ('👤 ' + user + '<br>' + (pend ? '⏳ <b>'+pend+'</b> entries pending sync' : '✅ All entries synced'))
-        : '⚠️ Not signed in — entries stay on phone until sign-in');
-  document.getElementById('signInBtn').style.display = user ? 'none' : 'block';
-  var vm = document.getElementById('vehManage'); vm.innerHTML='';
+  var info='<b>Role:</b> '+({SUP:'Supervisor',DSL:'Diesel Operator',ADM:'Admin'}[cfg.role])+'<br>'
+    +'<b>Name:</b> '+cfg.name+'<br>'
+    +(cfg.cp?('<b>Checkpoint:</b> '+cfg.cp+'<br>'):'')
+    +(cfg.point?('<b>Fuel point:</b> '+cfg.point+'<br>'):'')
+    +'<b>Trip entries:</b> '+logs.length+' · <b>Diesel:</b> '+diesel.length+' · <b>Qty rows:</b> '+qty.length;
+  document.getElementById('setInfo').innerHTML=info;
+  document.getElementById('vehCard').style.display=(cfg.role==='SUP'||cfg.role==='ADM')?'block':'none';
+  refreshSyncUI();
+  var vm=document.getElementById('vehManage'); if (!vm) return; vm.innerHTML='';
   vehicles.forEach(function(v,i){
-    var d = document.createElement('div'); d.className='logrow';
-    d.innerHTML = '<span style="font-weight:700">'+v.num+'</span><span class="pill">'+v.job+'</span>'
-      + '<span class="del" data-i="'+i+'">✕</span>';
-    d.querySelector('.del').onclick = function(){
-      if (confirm('Remove '+v.num+'? / हटाएं?')) { vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); }
-    };
+    var d=document.createElement('div'); d.className='logrow';
+    d.innerHTML='<span style="font-weight:700">'+v.num+'</span><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+v.job+'</span><span class="del" data-i="'+i+'">✕</span>';
+    d.querySelector('.del').onclick=function(){ if (confirm('Remove '+v.num+'?')){ vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); } };
     vm.appendChild(d);
   });
 }
-
 function clearOld(){
-  var cut = Date.now() - 7*24*3600*1000;
-  var before = logs.length;
-  logs = logs.filter(function(l){ return l.ts >= cut; });
-  set(LS.log, logs);
-  alert((before-logs.length)+' old entries removed / पुरानी एंट्री हटाई गईं');
+  var cut=Date.now()-30*24*3600*1000, before=logs.length+diesel.length;
+  logs=logs.filter(function(l){ return l.ts>=cut; });
+  diesel=diesel.filter(function(x){ return x.ts>=cut; });
+  set(LS.log,logs); set(LS.dsl,diesel);
+  alert((before-(logs.length+diesel.length))+' old entries removed');
 }
 
-// refresh "minutes ago" every minute
-setInterval(function(){ if (cfg && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
+/* =========================================================
+   TICKERS + START
+   ========================================================= */
+setInterval(function(){ if (cfg && cfg.role==='SUP' && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
+// admin dashboard auto-refresh — pulls fresh SharePoint/workbook data on its own
+setInterval(function(){ if (cfg && cfg.role==='ADM' && !document.getElementById('pgDash').classList.contains('hidden')) loadDash(); }, (CONFIG.DASH_REFRESH_SEC||120)*1000);
+document.getElementById('pinIn').addEventListener('keyup', function(e){ if (e.key==='Enter') tryUnlock(); });
+// ===================== DEMO SAMPLE DATA =====================
+function seedDemo(){
+  cfg = { role:'ADM', name:'Demo User', cp:'CHP', point:'CHP', pinH:'demo' };
+  logs=[]; diesel=[]; qty=[];
+  var now=new Date();
+  function ymdN(dd){ return dd.getFullYear()+'-'+String(dd.getMonth()+1).padStart(2,'0')+'-'+String(dd.getDate()).padStart(2,'0'); }
+  function pushEv(d,veh,job,cp,ev){
+    logs.push({ date:d.toLocaleDateString('en-IN'), time:d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}),
+      ts:d.getTime(), opDate:opDateOf(d), shift:shiftOf(d), cp:cp, sup:'Demo Supervisor',
+      veh:veh, job:job, route:routeOfJob(job), ev:ev, synced:true });
+  }
+  var j1=vehicles.filter(function(v){return v.job==='Job 1';});
+  var j2=vehicles.filter(function(v){return v.job==='Job 2';});
+  var base=new Date(); base.setHours(7,10,0,0); var N=now.getTime();
+  // full 4-stamp trip: src IN, src OUT(+g0), dest IN(+g1), dest OUT(+g2). Stamps after "now" are omitted (in-progress).
+  function tripStamps(veh,job,src,dst,startMs,g){
+    var t=[startMs, startMs+g[0]*60000, startMs+(g[0]+g[1])*60000, startMs+(g[0]+g[1]+g[2])*60000];
+    if (t[0]<N) pushEv(new Date(t[0]),veh,job,src,'IN');
+    if (t[1]<N) pushEv(new Date(t[1]),veh,job,src,'OUT');
+    if (t[2]<N) pushEv(new Date(t[2]),veh,job,dst,'IN');
+    if (t[3]<N) pushEv(new Date(t[3]),veh,job,dst,'OUT');
+  }
+  j1.forEach(function(v,i){ for (var k=0;k<2;k++) tripStamps(v.num,'Job 1','Dhoptala','CHP', base.getTime()+(i*12+k*210)*60000, [20,40,25]); });
+  j2.forEach(function(v,i){ for (var k=0;k<2;k++) tripStamps(v.num,'Job 2','CHP','Siding', base.getTime()+(i*12+k*200)*60000, [18,50,30]); });
+  var db=new Date(); db.setHours(9,0,0,0);
+  [[j1[0].num,40],[j1[1].num,38],[j2[0].num,42],[j2[1].num,39]].forEach(function(e,i){
+    diesel.push({date:today(),time:'09:0'+i,ts:db.getTime()+i*60000,opDate:opDateOf(db),shift:shiftOf(db),
+      operator:'Demo',point:'Dhoptala',assetType:'TIPPER',assetId:e[0],litres:e[1],slip:'D'+i,hours:null,route:'',synced:true});
+  });
+  MACHINES.forEach(function(m,i){
+    var run=(m.unit==='KM')?(120+i*20):(8+i), st=1000+i*100;
+    diesel.push({date:today(),time:'10:0'+i,ts:db.getTime()+i*120000,opDate:opDateOf(db),shift:shiftOf(db),
+      operator:'Demo',point:m.point,assetType:'MACHINE',assetId:m.id,litres:60+i*12,slip:'M'+i,
+      start:st,stop:st+run,hours:(m.unit==='KM'?null:run),km:(m.unit==='KM'?run:null),route:m.route,synced:true});
+  });
+  var start=parseYMD(CONFIG.OP_START), end=new Date(); end.setHours(0,0,0,0);
+  var seed=7; function rnd(){ seed=(seed*9301+49297)%233280; return seed/233280; }
+  for (var dcur=new Date(start); dcur<=end; dcur.setDate(dcur.getDate()+1)){
+    var dstr=ymdN(dcur);
+    j1.forEach(function(v){ qty.push({opDate:dstr,shift:'',route:'R1',veh:v.num,loadTe:Math.round(300+rnd()*70),destTe:null}); });
+    j2.forEach(function(v){ qty.push({opDate:dstr,shift:'',route:'R2',veh:v.num,loadTe:Math.round(180+rnd()*50),destTe:null}); });
+  }
+}
 
-// Enter key unlocks PIN screen
-document.getElementById('pinIn').addEventListener('keyup', function(e){ if (e.key === 'Enter') tryUnlock(); });
-
-if (cfg) boot();
+function startDemo(){ DEMO=true; seedDemo(); boot(true); }
+if (DEMO){ seedDemo(); boot(true); }
+else { initAuth(); if (cfg) boot(); }
 </script>
 </body>
 </html>
