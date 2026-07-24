@@ -395,6 +395,7 @@
     <h3 style="margin-top:0">Settings / सेटिंग</h3>
     <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
     <button class="btn ghost" onclick="editSetup()">Change role / setup बदलें</button>
+    <button class="btn red" onclick="logout()" style="margin-top:8px">🚪 Logout / लॉग आउट</button>
     <button class="btn red" onclick="clearOld()">🗑 Clear data older than 30 days / पुराना डेटा हटाएं</button>
   </div>
   <div class="card">
@@ -455,7 +456,8 @@
 var CONFIG = {
   ORG:  'M/s Mohd Aamir Transport',
   AREA: 'WCL Ballarpur Area',
-  OP_START: '2026-06-08',      // date operations began (YYYY-MM-DD)
+  OP_START: '2026-07-08',      // date operations began (YYYY-MM-DD)
+  ROUTE_START: { R1:'2026-07-08', R2:'2026-07-09' },  // per-route start dates (merged from manual edit)
   DAILY_TARGET_TE: 2700,       // per-route daily target in tonnes
   // Round-trip distance per route in km (loaded out + empty back). Set real values for KMPL.
   ROUTE_KM: { R1: 0, R2: 0 },  // 0 = "set distance" shown instead of KMPL
@@ -1666,13 +1668,19 @@ function renderMonth(day){
     var rows='';
     var combReq=0, combShort=0;
     [['R1','Route 1'],['R2','Route 2']].forEach(function(rr){
+      // per-route start date (merged manual change): each route's target counts from its own start
+      var rStart=parseYMD((CONFIG.ROUTE_START&&CONFIG.ROUTE_START[rr[0]])||CONFIG.OP_START);
+      var rOpStart=(mStart<rStart)?rStart:mStart;
+      var rTotalDays=Math.max(0,daysBetween(rOpStart,opEndInM)+1);
+      var rElapsedDays=(viewDay<rOpStart)?0:Math.max(0,daysBetween(rOpStart,elapsedEnd)+1);
+      var rRemainDays=Math.max(0,rTotalDays-rElapsedDays);
       var achieved=DASH.qty.filter(function(q){
-        return q.route===rr[0] && q.opDate>=ymd(opStartInM) && q.opDate<=ymd(elapsedEnd);
+        return q.route===rr[0] && q.opDate>=ymd(rOpStart) && q.opDate<=ymd(elapsedEnd);
       }).reduce(function(a,q){return a+(+q.loadTe||0);},0);
-      var targetToDate=CONFIG.DAILY_TARGET_TE*elapsedDays;
-      var monthTarget=CONFIG.DAILY_TARGET_TE*totalDays;
+      var targetToDate=CONFIG.DAILY_TARGET_TE*rElapsedDays;
+      var monthTarget=CONFIG.DAILY_TARGET_TE*rTotalDays;
       var shortfall=targetToDate-achieved;
-      var reqDaily=remainDays>0?((monthTarget-achieved)/remainDays):0;
+      var reqDaily=rRemainDays>0?((monthTarget-achieved)/rRemainDays):0;
       combReq+=reqDaily; combShort+=shortfall;
       rows+='<div style="margin-top:6px;border-top:1px solid #eef2f7;padding-top:6px">'
         +'<div class="kv"><span class="k"><b>'+rr[1]+'</b></span><span class="v">'+fmt(achieved,0)+' / '+fmt(monthTarget,0)+' Te</span></div>'
@@ -1943,6 +1951,13 @@ function clearOld(){
   diesel=diesel.filter(function(x){ return x.ts>=cut; });
   set(LS.log,logs); set(LS.dsl,diesel);
   alert((before-(logs.length+diesel.length))+' old entries removed');
+}
+// logout — clears the device's role/PIN and returns to the setup screen (data is kept)
+function logout(){
+  if (!confirm('Log out and change setup? Your logged data stays on the phone. / लॉग आउट करें?')) return;
+  try { localStorage.removeItem(LS.cfg); } catch(e){}
+  cfg=null;
+  location.reload();
 }
 
 /* =========================================================
