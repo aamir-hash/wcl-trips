@@ -40,7 +40,9 @@
     box-shadow:0 1px 4px rgba(0,0,0,.08); border:2.5px solid transparent; cursor:pointer; }
   .veh.in { border-color:var(--green); background:#e8f5e9; }
   .veh.out { border-color:#cfd8e3; }
-  .veh.down{opacity:.55;border-color:#bbb;background:#f0f0f0;} .veh .stbadge{font-size:11px;font-weight:800;color:#c62828;margin-top:4px;} .fleetrow{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid #edf1f6;} .fleetrow .fnum{font-weight:700;} .fleetrow .fjob{font-size:11px;color:var(--muted);} .fbtns{margin-left:auto;display:flex;gap:6px;}
+  .veh.stopped { border-color:var(--red); background:#fdecea; }
+  .veh.stopped .st { color:var(--red); }
+  .veh .stnote { font-size:10.5px; color:var(--red); margin-top:2px; }
   .veh .num { font-size:16px; font-weight:700; letter-spacing:.5px; }
   .veh .st { font-size:13px; font-weight:600; margin-top:6px; }
   .veh.in .st { color:var(--green); } .veh.out .st { color:var(--muted); }
@@ -100,6 +102,10 @@
   .tag { font-size:10.5px; padding:1px 6px; border-radius:10px; }
   .tag.j1 { background:#e3f2fd; color:#1565c0; } .tag.j2 { background:#f3e5f5; color:#7b1fa2; }
   .muted-note { font-size:12px; color:var(--muted); margin:4px 0; }
+  .switchbar { display:flex; gap:8px; margin-bottom:10px; }
+  .switchbar button { flex:1; padding:9px 4px; font-size:13px; font-weight:600; border:1.5px solid #cfd8e3;
+    border-radius:9px; background:#fff; color:var(--blue); cursor:pointer; }
+  .switchbar button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
 </style>
 </head>
 <body>
@@ -122,6 +128,10 @@
       <div class="rolebtn" data-role="DSL" onclick="pickRole('DSL')">
         <div class="rt">⛽ Diesel Operator / डीज़ल ऑपरेटर</div>
         <div class="rd">Logs diesel issued to vehicles & machines / डीज़ल एंट्री</div>
+      </div>
+      <div class="rolebtn" data-role="ACCT" onclick="pickRole('ACCT')">
+        <div class="rt">🧾 Accountant / अकाउंटेंट</div>
+        <div class="rd">Weighbridge time & weights — upload Excel or edit / वज़न डेटा</div>
       </div>
       <div class="rolebtn" data-role="ADM" onclick="pickRole('ADM')">
         <div class="rt">📊 Admin / एडमिन</div>
@@ -159,8 +169,14 @@
       </select>
     </div>
 
+    <div id="acctFields" class="hidden">
+      <label>Accountant Name / अकाउंटेंट का नाम</label>
+      <input type="text" id="acctName" placeholder="Type name / नाम लिखें">
+      <div class="muted-note">Uploads the weighbridge Excel and edits weigh-out time + weights. Sign in with Microsoft to sync.</div>
+    </div>
+
     <div id="admFields" class="hidden">
-      <div class="muted-note">Admin device — shows the dashboard only. Sign in with Microsoft to pull live data from SharePoint.</div>
+      <div class="muted-note">Admin device — dashboard + can edit weighbridge entries. Sign in with Microsoft to pull live data from SharePoint.</div>
     </div>
 
     <div id="pinBlock" class="hidden">
@@ -205,13 +221,14 @@
   </div>
   <div id="job1Sec">
     <div class="jobhead"><span class="dot" style="background:#1565c0"></span>
-      <span><span class="t">JOB 1 — Feeding</span><br><span class="r">Dhoptala → CHP Hopper</span></span></div>
-    <div id="fleetBar" class="card" style="padding:10px;text-align:center"><div id="fleetSummary" class="muted-note" style="margin-bottom:8px"></div><button class="btn ghost" style="margin:0" onclick="openFleetStatus()">\uD83D\uDD27 Fleet status / \u0917\u093E\u0921\u093C\u093F\u092F\u094B\u0902</button></div>
+      <span><span class="t">JOB 1 — Feeding</span><br><span class="r">Dhoptala → CHP Hopper</span></span>
+      <span class="pill" id="job1Stat" style="margin-left:auto"></span></div>
     <div class="veh-grid" id="vehGrid1"></div>
   </div>
   <div id="job2Sec">
     <div class="jobhead"><span class="dot" style="background:#7b1fa2"></span>
-      <span><span class="t">JOB 2 — Dispatch</span><br><span class="r">SOCM → Ballarpur Siding</span></span></div>
+      <span><span class="t">JOB 2 — Dispatch</span><br><span class="r">SOCM → Ballarpur Siding</span></span>
+      <span class="pill" id="job2Stat" style="margin-left:auto"></span></div>
     <div class="veh-grid" id="vehGrid2"></div>
   </div>
   <button class="btn ghost" onclick="addVehicle()">+ Add Vehicle / गाड़ी जोड़ें</button>
@@ -250,8 +267,6 @@
       <input type="number" id="dStop" inputmode="decimal" placeholder="e.g. 1582.7" oninput="updateRunNote()">
       <div class="muted-note" id="dRunNote">Run = Stop − Start</div>
     </div>
-    <label>HSD slip no. (optional) / स्लिप नंबर</label>
-    <input type="text" id="dSlip" placeholder="slip / bill no">
     <button class="btn amber" onclick="saveDiesel()">Save Entry / एंट्री सेव करें</button>
   </div>
   <h2 class="sec">This Shift's Diesel / इस शिफ्ट का डीज़ल</h2>
@@ -305,14 +320,81 @@
   <div id="xlPreview"></div>
 </div>
 
+<!-- ================= ACCOUNTANT: WEIGHBRIDGE ================= -->
+<div class="wrap hidden" id="pgWB">
+  <div id="wbNav" class="switchbar"></div>
+  <div class="stat">
+    <div class="box"><div class="n" id="wbCount">0</div><div class="l">Entries (view) / एंट्री</div></div>
+    <div class="box"><div class="n" id="wbTe">0</div><div class="l">Net Te (view) / वज़न</div></div>
+    <div class="box"><div class="n" id="wbPend">0</div><div class="l">Pending sync / बाकी</div></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">🧾 Weighbridge Entries / वज़न एंट्री</h3>
+    <label>Upload weighbridge Excel (bulk) / एक्सेल अपलोड</label>
+    <input type="file" id="wbFile" accept=".xlsx,.xls,.csv" onchange="onWBPick(event)">
+    <div id="wbImport" class="muted-note" style="margin-top:6px"></div>
+    <button class="btn ghost sm" onclick="openWBEdit(null)">＋ Add entry manually / एंट्री जोड़ें</button>
+    <label style="margin-top:10px">View date / तारीख</label>
+    <select id="wbDate" onchange="renderWB()"></select>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="wbTable"></div></div>
+  <button class="btn green" onclick="syncNow()">🔄 Sync to SharePoint / सिंक करें</button>
+</div>
+
+<!-- WEIGHBRIDGE EDIT MODAL -->
+<div class="modal" id="wbModal">
+  <div class="sheet">
+    <h3 id="wbmTitle">Weighbridge entry</h3>
+    <label>Date / तारीख</label><input type="date" id="wbmDate">
+    <label>Vehicle No. / गाड़ी</label><input type="text" id="wbmVeh" autocapitalize="characters" placeholder="MH34...">
+    <label>Job / काम</label>
+    <select id="wbmJob"><option value="Job 1">Job 1 — Dhoptala→CHP</option><option value="Job 2">Job 2 — SOCM→Siding</option></select>
+    <label>Weigh-out time (dispatch) / वज़न समय</label><input type="time" id="wbmTime">
+    <label>Gross Weight (Te)</label><input type="number" id="wbmGross" inputmode="decimal" oninput="wbNet()">
+    <label>Tare Weight (Te)</label><input type="number" id="wbmTare" inputmode="decimal" oninput="wbNet()">
+    <label>Net Weight (Te) — auto = Gross − Tare</label><input type="number" id="wbmNet" inputmode="decimal">
+    <label>INV/GP No. (optional)</label><input type="text" id="wbmSlip">
+    <button class="btn" onclick="saveWBEntry()">Save / सेव करें</button>
+    <button class="btn ghost" onclick="closeWBEdit()">Cancel / रद्द करें</button>
+  </div>
+</div>
+
+<!-- ================= ACCOUNTANT/ADMIN: TRIPS REVIEW ================= -->
+<div class="wrap hidden" id="pgTrips">
+  <div id="tripsNav" class="switchbar"></div>
+  <div class="card">
+    <h3 style="margin-top:0">🚦 Supervisor Trips — review & correct</h3>
+    <div class="muted-note">Fix a wrong IN/OUT time or delete a fake/duplicate trip a supervisor logged. Changes sync to SharePoint.</div>
+    <button class="btn ghost sm" onclick="loadTripRows(true)">🔄 Reload supervisor entries</button>
+    <div style="display:flex;gap:8px">
+      <div style="flex:1"><label>Date / तारीख</label><select id="tripsDate" onchange="renderTrips()"></select></div>
+      <div style="flex:1"><label>Vehicle / गाड़ी</label><select id="tripsVeh" onchange="renderTrips()"></select></div>
+    </div>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="tripsTable"></div></div>
+</div>
+
+<!-- TRIP EDIT MODAL -->
+<div class="modal" id="tripModal">
+  <div class="sheet">
+    <h3 id="tmTitle">Edit trip entry</h3>
+    <div class="subt" id="tmInfo"></div>
+    <label>Event / इवेंट</label>
+    <select id="tmEvent"><option value="IN">IN</option><option value="OUT">OUT</option></select>
+    <label>Time / समय</label>
+    <input type="time" id="tmTime">
+    <button class="btn" onclick="saveTripEdit()">Save / सेव करें</button>
+    <button class="btn red" onclick="delTripFromEdit()">🗑 Delete this entry / हटाएं</button>
+    <button class="btn ghost" onclick="closeTripEdit()">← Back / वापस</button>
+  </div>
+</div>
+
 <!-- ================= SETTINGS (all roles) ================= -->
 <div class="wrap hidden" id="pgSet">
   <div class="card">
     <h3 style="margin-top:0">Settings / सेटिंग</h3>
     <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
     <button class="btn ghost" onclick="editSetup()">Change role / setup बदलें</button>
-    <button class="btn red" onclick="logout()" style="margin-top:8px">🚪 Logout / लॉग आउट</button>
-    <div class="muted-note" style="margin-top:4px">Signs out of Microsoft &amp; returns to the setup screen. PIN required.</div>
     <button class="btn red" onclick="clearOld()">🗑 Clear data older than 30 days / पुराना डेटा हटाएं</button>
   </div>
   <div class="card">
@@ -338,7 +420,12 @@
       <button class="bigbtn" id="btnIn" style="background:var(--green)" onclick="logEvent('IN')">⬇ IN<br><span style="font-size:14px;font-weight:600">गाड़ी अंदर आई</span></button>
       <button class="bigbtn" id="btnOut" style="background:var(--red)" onclick="logEvent('OUT')">⬆ OUT<br><span style="font-size:14px;font-weight:600">गाड़ी बाहर गई</span></button>
     </div>
-    <button class="btn ghost" onclick="closeModal()">Cancel / रद्द करें</button>
+    <div style="margin-top:12px;border-top:1px dashed #e3e9f0;padding-top:10px">
+      <div class="subt" id="mStatusNow" style="margin-bottom:4px"></div>
+      <input type="text" id="mStatusComment" placeholder="Reason / comment (maintenance, breakdown…)">
+      <button class="btn" id="mStatusBtn" onclick="toggleVehStatus()"></button>
+    </div>
+    <button class="btn ghost" onclick="closeModal()">← Back / रद्द करें</button>
   </div>
 </div>
 
@@ -368,8 +455,7 @@
 var CONFIG = {
   ORG:  'M/s Mohd Aamir Transport',
   AREA: 'WCL Ballarpur Area',
-  OP_START: '2026-07-08',
-  ROUTE_START: { R1:'2026-07-08', R2:'2026-07-09' },      // date operations began (YYYY-MM-DD)
+  OP_START: '2026-06-08',      // date operations began (YYYY-MM-DD)
   DAILY_TARGET_TE: 2700,       // per-route daily target in tonnes
   // Round-trip distance per route in km (loaded out + empty back). Set real values for KMPL.
   ROUTE_KM: { R1: 0, R2: 0 },  // 0 = "set distance" shown instead of KMPL
@@ -390,7 +476,7 @@ var CONFIG = {
   QTY_XLSX_URL: 'https://oregenesis.sharepoint.com/:x:/s/rpcmat/IQCETw1wRqw0SopDIRQDEaUGAX7WdGJRFANBnKnzDoGQcbQ',
   QTY_SOURCE: 'WORKBOOK',   // 'WORKBOOK' = read the xlsx above ; 'LIST' = read QTY_LIST
   // SharePoint site that holds the trip/diesel lists this app WRITES to.
-  SITE: 'oregenesis.sharepoint.com:/sites/WCLTransportation:',
+  SITE: 'oregenesis.sharepoint.com:/sites/rpcmat:',
   // Dashboard auto-refresh interval (seconds) — pulls fresh data on its own.
   DASH_REFRESH_SEC: 120
 };
@@ -407,7 +493,7 @@ function machineMeta(id){ for (var i=0;i<MACHINES.length;i++){ if (MACHINES[i].i
 /* =========================================================
    STORAGE
    ========================================================= */
-var LS = { cfg:'vt_cfg', veh:'vt_vehicles', log:'vt_logs', dsl:'vt_diesel', qty:'vt_qty', status:'vt_status' };
+var LS = { cfg:'vt_cfg', veh:'vt_vehicles', log:'vt_logs', dsl:'vt_diesel', qty:'vt_qty' };
 function get(k,d){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return d; } }
 function getOr(k,d){ var v=get(k,d); return (v===null||v===undefined)?d:v; }
 function set(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
@@ -417,7 +503,8 @@ var vehicles = get(LS.veh, null);
 var logs   = getOr(LS.log, []);
 var diesel = getOr(LS.dsl, []);
 var qty    = getOr(LS.qty, []);
-var statusArr = getOr(LS.status, []);
+var weighs = getOr('vt_weighs', []);   // accountant weighbridge entries {id,opDate,date,veh,job,route,wb,ts,gross,tare,net,slip,spId,synced}
+var vstatus = getOr('vt_vstatus', []); // vehicle status changes {id,date,ts,opDate,veh,status,comment,by,synced}
 var selVeh = null, pendingRole = null;
 // migrate legacy (pre-role) installs: old setup had no 'role' field -> force fresh role-based setup
 if (cfg && !cfg.role) cfg = null;
@@ -487,6 +574,7 @@ function pickRole(r){
   document.querySelectorAll('.rolebtn').forEach(function(b){ b.classList.toggle('sel', b.dataset.role===r); });
   document.getElementById('supFields').classList.toggle('hidden', r!=='SUP');
   document.getElementById('dslFields').classList.toggle('hidden', r!=='DSL');
+  document.getElementById('acctFields').classList.toggle('hidden', r!=='ACCT');
   document.getElementById('admFields').classList.toggle('hidden', r!=='ADM');
   document.getElementById('pinBlock').classList.remove('hidden');
 }
@@ -506,6 +594,9 @@ function saveSetup(){
     name=document.getElementById('dslName').value.trim();
     point=document.getElementById('dslPoint').value;
     if (!name||!point){ alert('Enter name & fuel point / नाम और पॉइंट डालें'); return; }
+  } else if (r==='ACCT'){
+    name=document.getElementById('acctName').value.trim();
+    if (!name){ alert('Enter accountant name / नाम डालें'); return; }
   } else {
     name='Admin';
   }
@@ -524,23 +615,6 @@ function editSetup(){
   }
   showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
 }
-function logout(){
-  if (cfg && cfg.pinH){ var p=prompt("Enter PIN to logout:"); if(p===null)return; if(pinHash(p.trim())!==cfg.pinH){alert("Wrong PIN");return;} }
-  var pend=(logs||[]).filter(function(l){return !l.synced;}).length;
-  if(pend>0 && !confirm(pend+" entries not yet synced. Logout anyway?")) return;
-  try{ localStorage.removeItem(LS.cfg); }catch(e){}
-  cfg=null;
-  var bar=document.getElementById("tabBar"); if(bar) bar.style.display="none";
-  try{ if(typeof msalApp!=="undefined" && msalApp){ var ac=msalApp.getActiveAccount()||msalApp.getAllAccounts()[0]; if(ac){ msalApp.logoutRedirect({account:ac, postLogoutRedirectUri:window.location.origin+window.location.pathname}); return; } } }catch(e){}
-  location.reload();
-}
-function visibleJobs(){ var c=cfg&&cfg.cp; if(c==='Dhoptala') return {'Job 1':1}; if(c==='Siding') return {'Job 2':1}; return {'Job 1':1,'Job 2':1}; }
-function vehStatus(veh){ var od=curOpDate(), sh=curShift(), rr='Running'; for(var i=0;i<statusArr.length;i++){ var s=statusArr[i]; if(s.veh===veh && s.opDate===od && s.shift===sh) rr=s.status; } return rr; }
-function statusFields(s){ return { Title:s.opDate, EntryTime:s.time, Timestamp:new Date(s.ts).toISOString(), OpDate:s.opDate, Shift:s.shift, Checkpoint:s.cp, Supervisor:s.sup, Vehicle:s.veh, Job:s.job, Status:s.status }; }
-function setVehStatus(veh,job,st){ var d=new Date(); statusArr.push({date:today(),time:nowT(),ts:d.getTime(),opDate:opDateOf(d),shift:shiftOf(d),cp:cfg.cp,sup:cfg.name,veh:veh,job:job,status:st,synced:false}); set(LS.status,statusArr); renderMain(); var fm=document.getElementById('fleetModal'); if(fm&&fm.classList.contains('show')) buildFleetList(); syncNow(true); }
-function openFleetStatus(){ var m=document.getElementById('fleetModal'); if(!m){ m=document.createElement('div'); m.id='fleetModal'; m.className='modal'; m.innerHTML='<div class=\'sheet\'><h3>\uD83D\uDD27 Fleet status \u2014 '+curShift()+'</h3><div class=\'subt\'>Mark each vehicle for this shift / \u0907\u0938 \u0936\u093F\u092B\u094D\u091F</div><div id=\'fleetList\'></div><button class=\'btn ghost\' onclick=\'closeFleet()\'>Close / \u092C\u0902\u0926</button></div>'; document.body.appendChild(m); } m.classList.add('show'); buildFleetList(); }
-function closeFleet(){ var m=document.getElementById('fleetModal'); if(m) m.classList.remove('show'); }
-function buildFleetList(){ var vj=visibleJobs(), host=document.getElementById('fleetList'); if(!host) return; var h=''; vehicles.forEach(function(v){ if(!vj[v.job]) return; var st=vehStatus(v.num); var opts=['Running','Breakdown','Disallowed']; var btns=opts.map(function(s){ var on=st===s; var col=s==='Running'?'#2e7d32':(s==='Breakdown'?'#ef6c00':'#c62828'); var ic=s==='Running'?'\uD83D\uDFE2':(s==='Breakdown'?'\uD83D\uDD27':'\u26D4'); return '<button onclick="setVehStatus(\''+v.num+'\',\''+v.job+'\',\''+s+'\')" style="padding:8px 10px;border-radius:8px;font-size:16px;font-weight:700;border:1.5px solid '+col+';color:'+(on?'#fff':col)+';background:'+(on?col:'#fff')+'">'+ic+'</button>'; }).join(''); h+='<div class="fleetrow"><span class="fnum">'+v.num+'</span><span class="fjob">'+v.job+'</span><div class="fbtns">'+btns+'</div></div>'; }); host.innerHTML=h; }
 function showOnly(id){
   ['pgSetup','pgMain','pgLog','pgDiesel','pgDash','pgData','pgSet'].forEach(function(p){
     document.getElementById(p).classList.toggle('hidden', p!==id);
@@ -553,11 +627,12 @@ function showOnly(id){
 var TABS = {
   SUP: [ {id:'Main',ico:'🚛',t:'Vehicles'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   DSL: [ {id:'Diesel',ico:'⛽',t:'Diesel'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
-  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'Data',ico:'📥',t:'Import'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
+  ACCT:[ {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
+  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
 };
 // demo shows every screen in one device
 var DEMO_TABS = [ {id:'Main',ico:'🚛',t:'Job1/2'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Diesel',ico:'⛽',t:'Diesel'},
-  {id:'Dash',ico:'📊',t:'Dash'}, {id:'Data',ico:'📥',t:'Import'}, {id:'Set',ico:'⚙️',t:'Set'} ];
+  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
 function boot(skipLock){
   if (!cfg) return;
   if (!cfg.pinH){ showOnly('pgSetup'); return; }
@@ -565,7 +640,7 @@ function boot(skipLock){
   showOnly('pgSetup'); document.getElementById('pgSetup').classList.add('hidden');
   document.getElementById('tabBar').style.display='flex';
   document.getElementById('hdrTitle').textContent = DEMO ? '🎬 DEMO — all screens'
-    : (cfg.role==='SUP' ? cfg.cp : (cfg.role==='DSL' ? 'Diesel — '+cfg.point : 'Admin Dashboard'));
+    : (cfg.role==='SUP' ? cfg.cp : cfg.role==='DSL' ? 'Diesel — '+cfg.point : cfg.role==='ACCT' ? 'Weighbridge Entry' : 'Admin Dashboard');
   document.getElementById('hdrSub').textContent = (DEMO?'Sample data · ':'') + cfg.name + ' — Mohd Aamir Transport';
   var first = (DEMO?DEMO_TABS:TABS[cfg.role])[0].id;
   showTab(first);
@@ -594,13 +669,15 @@ function tryUnlock(){
   }
 }
 function showTab(t){
-  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', Set:'pgSet' };
+  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', Set:'pgSet' };
   showOnly(pageMap[t]);
   document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('act'); });
   var at=document.getElementById('tab'+t); if (at) at.classList.add('act');
   if (t==='Main') renderMain();
   if (t==='Log') renderLog();
   if (t==='Diesel') renderDiesel();
+  if (t==='WB') renderWB();
+  if (t==='Trips') renderTrips();
   if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
@@ -618,9 +695,12 @@ function opDayLogs(){
   var od=curOpDate();
   return logs.filter(function(l){ return l.opDate===od && l.cp===cfg.cp; });
 }
+// latest event for this vehicle at this checkpoint across ALL days — so a running (INSIDE)
+// trip stays open across the 07:00 op-day boundary and midnight until the supervisor logs OUT (24/7).
 function lastEvent(v){
-  var tl=opDayLogs().filter(function(l){ return l.veh===v; });
-  return tl.length ? tl[tl.length-1] : null;
+  var tl=logs.filter(function(l){ return l.veh===v && l.cp===cfg.cp && !l.cancelled; });
+  if (!tl.length) return null;
+  return tl.reduce(function(a,b){ return (b.ts||0)>(a.ts||0) ? b : a; });
 }
 function mins(ts){ var m=Math.round((Date.now()-ts)/60000); return m<60?m+' min':Math.floor(m/60)+'h '+(m%60)+'m'; }
 
@@ -634,29 +714,34 @@ function renderMain(){
   if (bar){ bar.classList.toggle('hidden', !DEMO); if (DEMO) document.getElementById('demoCp').value=cfg.cp; }
   var g1=document.getElementById('vehGrid1'), g2=document.getElementById('vehGrid2');
   g1.innerHTML=''; g2.innerHTML='';
-  var vj=visibleJobs(); var _s1=document.getElementById('job1Sec'), _s2=document.getElementById('job2Sec'); if(_s1)_s1.classList.toggle('hidden',!vj['Job 1']); if(_s2)_s2.classList.toggle('hidden',!vj['Job 2']); var _run=0,_brk=0,_dis=0;
   var inCount=0, od=curOpDate(), sh=curShift();
+  var cnt={ 'Job 1':{run:0,stop:0}, 'Job 2':{run:0,stop:0} };
   vehicles.forEach(function(v){
-    if(!vj[v.job]) return;
-    var _st=vehStatus(v.num); if(_st==='Breakdown')_brk++; else if(_st==='Disallowed')_dis++; else _run++;
     var le=lastEvent(v.num), isIn=le&&le.ev==='IN';
-    if (isIn) inCount++;
+    var stopped=v.status==='Stopped';
+    if (isIn && !stopped) inCount++;
+    if (cnt[v.job]){ if (stopped) cnt[v.job].stop++; else cnt[v.job].run++; }
     var tripsDay=opDayLogs().filter(function(l){ return l.veh===v.num && l.ev==='IN'; }).length;
     var tripsShift=logs.filter(function(l){ return l.opDate===od&&l.shift===sh&&l.cp===cfg.cp&&l.veh===v.num&&l.ev==='IN'; }).length;
+    var sinceTxt = v.statusTs ? ('since '+new Date(v.statusTs).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+' · '+mins(v.statusTs)) : '';
     var d=document.createElement('div');
-    d.className='veh '+(_st!=='Running'?'down':(isIn?'in':'out'));
+    d.className='veh '+(stopped?'stopped':(isIn?'in':'out'));
     d.innerHTML='<div class="num">'+v.num+'</div>'
-      +'<div class="st">'+(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—'))+'</div>'
-      +(le?'<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>':'<div class="since">No entry / कोई एंट्री नहीं</div>')
+      +'<div class="st">'+(stopped?'⛔ BREAKDOWN':(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—')))+'</div>'
+      +(stopped
+        ? '<div class="stnote">'+(v.statusComment||'maintenance / breakdown')+(sinceTxt?('<br>'+sinceTxt):'')+'</div>'
+        : (le?'<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>':'<div class="since">No entry / कोई एंट्री नहीं</div>'))
       +'<div class="trips">'+tripsDay+' today</div>'
-      +'<div class="shifttrips">'+tripsShift+' this shift</div>'+(_st!=='Running'?'<div class="stbadge">'+(_st==='Breakdown'?'\uD83D\uDD27 BREAKDOWN':'\u26D4 DISALLOWED')+'</div>':'');
+      +'<div class="shifttrips">'+tripsShift+' this shift</div>';
     d.onclick=function(){ openModal(v); };
     (v.job==='Job 1'?g1:g2).appendChild(d);
   });
+  function statTxt(c){ return '🟢 '+c.run+' running'+(c.stop?(' · ⛔ '+c.stop+' down'):''); }
+  var j1s=document.getElementById('job1Stat'), j2s=document.getElementById('job2Stat');
+  if (j1s) j1s.innerHTML=statTxt(cnt['Job 1']); if (j2s) j2s.innerHTML=statTxt(cnt['Job 2']);
   document.getElementById('stIn').textContent=inCount;
   document.getElementById('stTrips').textContent=shiftLogs().length;
   document.getElementById('stShift').textContent=sh;
-  var _fs=document.getElementById('fleetSummary'); if(_fs)_fs.innerHTML='\uD83D\uDFE2 Running '+_run+' \u00B7 \uD83D\uDD27 Breakdown '+_brk+' \u00B7 \u26D4 Disallowed '+_dis;
 }
 function openModal(v){
   selVeh=v;
@@ -664,13 +749,45 @@ function openModal(v){
   var le=lastEvent(v.num);
   document.getElementById('mInfo').textContent=le?('Last: '+le.ev+' at '+le.time+' — '+mins(le.ts)+' ago'):'No entry today / आज कोई एंट्री नहीं';
   var bi=document.getElementById('btnIn'), bo=document.getElementById('btnOut');
+  // contextual labels — is this checkpoint the loading (source) or unloading (destination) point for this job?
+  var roles=cpRole(v.job), isSrc=cfg.cp===roles.src, isDst=cfg.cp===roles.dst;
+  var inSub, outSub;
+  if (isSrc){ inSub='लोडिंग के लिए अंदर गई (in for loading)'; outSub='लोड होकर बाहर गई (out, loaded)'; }
+  else if (isDst){ inSub='खाली करने अंदर गई (in to unload)'; outSub='खाली होकर बाहर गई (out, empty)'; }
+  else { inSub='गाड़ी अंदर आई'; outSub='गाड़ी बाहर गई'; }
+  bi.innerHTML='⬇ IN<br><span style="font-size:13px;font-weight:600">'+inSub+'</span>';
+  bo.innerHTML='⬆ OUT<br><span style="font-size:13px;font-weight:600">'+outSub+'</span>';
   bi.disabled=!!(le&&le.ev==='IN'); bo.disabled=!!(le&&le.ev==='OUT');
   bi.style.opacity=bi.disabled?'.35':'1'; bo.style.opacity=bo.disabled?'.35':'1';
+  // vehicle running/stopped status
+  var stopped=v.status==='Stopped';
+  document.getElementById('mStatusNow').innerHTML='Status: '+(stopped
+    ? '<b style="color:var(--red)">⛔ STOPPED</b>'+(v.statusComment?(' — '+v.statusComment):'')
+    : '<b style="color:var(--green)">✅ RUNNING</b>');
+  document.getElementById('mStatusComment').value=v.statusComment||'';
+  var sb=document.getElementById('mStatusBtn');
+  sb.textContent=stopped?'✅ Mark RUNNING / चालू करें':'⛔ Mark STOPPED (maintenance/breakdown)';
+  sb.className='btn '+(stopped?'green':'red');
+  if (stopped){ bi.disabled=true; bo.disabled=true; bi.style.opacity='.35'; bo.style.opacity='.35';
+    document.getElementById('mInfo').textContent='⛔ STOPPED — set RUNNING to log IN/OUT'; }
   document.getElementById('modal').classList.add('show');
 }
 function closeModal(){ document.getElementById('modal').classList.remove('show'); }
+function toggleVehStatus(){
+  if (!selVeh) return;
+  var stopping = selVeh.status!=='Stopped';
+  var comment=document.getElementById('mStatusComment').value.trim();
+  if (stopping && !comment){ if (!confirm('Mark STOPPED without a reason? / बिना कारण बंद करें?')) return; }
+  selVeh.status = stopping?'Stopped':'Running';
+  selVeh.statusComment = comment; selVeh.statusTs=Date.now();
+  set(LS.veh, vehicles);
+  var d=new Date();
+  vstatus.push({ id:uid(), date:today(), ts:d.getTime(), opDate:opDateOf(d), veh:selVeh.num,
+    status:selVeh.status, comment:comment, by:cfg.name, synced:false });
+  set('vt_vstatus', vstatus); syncNow(true);
+  closeModal(); renderMain();
+}
 function logEvent(ev){
-  if(ev==='IN' && vehStatus(selVeh.num)!=='Running'){ alert(selVeh.num+' is marked '+vehStatus(selVeh.num)+' this shift. Set it Running first.'); return; }
   var le=lastEvent(selVeh.num);
   if (le&&le.ev===ev){
     alert(ev==='IN'
@@ -804,12 +921,11 @@ function saveDiesel(){
   var type=document.getElementById('dType').value;
   var asset=document.getElementById('dAsset').value;
   var lit=parseFloat(document.getElementById('dLitres').value);
-  var slip=document.getElementById('dSlip').value.trim();
   if (isNaN(lit)||lit<=0||lit>2000){ alert('Enter valid litres / सही लीटर डालें'); return; }
   var d=new Date();
   var rec={ date:today(), time:nowT(), ts:d.getTime(), opDate:opDateOf(d), shift:shiftOf(d),
     operator:cfg.name, point:cfg.point, assetType:type, assetId:asset,
-    litres:lit, slip:slip, hours:null, km:null, start:null, stop:null, route:'', synced:false };
+    litres:lit, slip:'', hours:null, km:null, start:null, stop:null, route:'', synced:false };
   if (type==='MACHINE'){
     var meta=machineMeta(asset);
     var a=parseFloat(document.getElementById('dStart').value), b=parseFloat(document.getElementById('dStop').value);
@@ -818,15 +934,15 @@ function saveDiesel(){
     if (meta.unit==='KM') rec.km=b-a; else rec.hours=b-a;
   }
   var runTxt = rec.hours!=null?(' · '+fmt(rec.hours,1)+' hr'):(rec.km!=null?(' · '+fmt(rec.km,1)+' km'):'');
-  if (!confirm('Confirm diesel? / डीज़ल पक्का?\n\n'+asset+'\n'+lit+' L'+runTxt+(slip?('\nSlip: '+slip):''))) return;
+  if (!confirm('Confirm diesel? / डीज़ल पक्का?\n\n'+asset+'\n'+lit+' L'+runTxt)) return;
   diesel.push(rec); set(LS.dsl,diesel);
-  ['dLitres','dStart','dStop','dSlip'].forEach(function(id){ document.getElementById(id).value=''; });
+  ['dLitres','dStart','dStop'].forEach(function(id){ document.getElementById(id).value=''; });
   renderDiesel(); syncNow(true);
 }
-function dieselGroupTable(map, title, dot, isMachine){
+function dieselGroupTable(map, title, dot, isMachine, emptyMsg){
   var keys=Object.keys(map).sort();
   var h='<div class="jobhead" style="margin:6px 2px 6px"><span class="dot" style="background:'+dot+'"></span><span class="t">'+title+'</span></div>';
-  if (!keys.length) return h+'<div class="muted-note" style="margin-bottom:8px">None this shift / इस शिफ्ट कुछ नहीं</div>';
+  if (!keys.length) return h+'<div class="muted-note" style="margin-bottom:8px">'+(emptyMsg||'None')+'</div>';
   var totL=0, totH=0;
   h+='<table class="dash"><thead><tr><th class="l">'+(isMachine?'Machine':'Vehicle')+'</th><th>Fills</th><th>Litres</th>'+(isMachine?'<th>Hours</th>':'')+'</tr></thead><tbody>';
   keys.forEach(function(k){ var g=map[k]; totL+=g.lit; totH+=g.hrs;
@@ -839,13 +955,21 @@ function renderDiesel(){
   onDType();
   var ents=dslShiftEntries();
   var jobOf={}; vehicles.forEach(function(v){ jobOf[v.num]=v.job; });
-  function grp(pred){ var m={}; ents.filter(pred).forEach(function(x){ var g=m[x.assetId]=m[x.assetId]||{lit:0,cnt:0,hrs:0}; g.lit+=x.litres; g.cnt++; g.hrs+=(x.hours!=null?x.hours:(x.km||0)); }); return m; }
-  var g1=grp(function(x){ return x.assetType==='TIPPER' && jobOf[x.assetId]==='Job 1'; });
-  var g2=grp(function(x){ return x.assetType==='TIPPER' && jobOf[x.assetId]==='Job 2'; });
-  var gm=grp(function(x){ return x.assetType==='MACHINE'; });
-  var html = dieselGroupTable(g1,'JOB 1 Tippers','#1565c0',false)
-    + '<div style="height:12px"></div>' + dieselGroupTable(g2,'JOB 2 Tippers','#7b1fa2',false)
-    + '<div style="height:12px"></div>' + dieselGroupTable(gm,'Machines','#ef6c00',true);
+  function grpOf(arr,pred){ var m={}; arr.filter(pred).forEach(function(x){ var g=m[x.assetId]=m[x.assetId]||{lit:0,cnt:0,hrs:0}; g.lit+=x.litres; g.cnt++; g.hrs+=(x.hours!=null?x.hours:(x.km||0)); }); return m; }
+  function tables(arr, empty){
+    var t1=grpOf(arr,function(x){ return x.assetType==='TIPPER' && jobOf[x.assetId]==='Job 1'; });
+    var t2=grpOf(arr,function(x){ return x.assetType==='TIPPER' && jobOf[x.assetId]==='Job 2'; });
+    var tm=grpOf(arr,function(x){ return x.assetType==='MACHINE'; });
+    var tU=grpOf(arr,function(x){ return x.assetType==='TIPPER' && !jobOf[x.assetId]; });
+    return dieselGroupTable(t1,'JOB 1 Tippers','#1565c0',false,empty)
+      + '<div style="height:12px"></div>' + dieselGroupTable(t2,'JOB 2 Tippers','#7b1fa2',false,empty)
+      + '<div style="height:12px"></div>' + dieselGroupTable(tm,'Machines','#ef6c00',true,empty)
+      + (Object.keys(tU).length? ('<div style="height:12px"></div>'+dieselGroupTable(tU,'Other vehicles','#6b7a8c',false,empty)) : '');
+  }
+  var html = '<h2 class="sec" style="margin:2px 2px 6px">This shift ('+curShift()+')</h2>'
+    + tables(ents,'None this shift / इस शिफ्ट कुछ नहीं')
+    + '<h2 class="sec" style="margin:18px 2px 6px">Overall issued — till date</h2>'
+    + tables(diesel,'None yet / अभी कुछ नहीं');
   var rec=ents.slice().reverse();
   if (rec.length){
     html+='<div class="muted-note" style="margin-top:12px">Entries this shift (tap ✕ to delete):</div>';
@@ -871,6 +995,245 @@ function exportDieselCSV(){
 }
 
 /* =========================================================
+   ACCOUNTANT — weighbridge entries (upload Excel / edit)
+   Excel columns per job: Sr No.,Date,Vehicle No.,INV/GP No.,From,To,
+   Gross Date,Gross Time,Gross Weight,Tare Weight,D WB(net)
+   ========================================================= */
+function uid(){ return 'w'+Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+// dedupe key: INV/GP + vehicle + date (falls back to weigh time if no slip)
+function wbKey(e){ return (e.route||'')+'|'+(e.veh||'')+'|'+(e.slip? ('gp:'+e.slip) : ('t:'+e.ts))+'|'+e.opDate; }
+var WB_PENDING=null, wbEditId=null;
+function parseWBWorkbook(wbk){
+  var out=[];
+  wbk.SheetNames.forEach(function(name){
+    var U=name.toUpperCase(), route=null, wbName=null;
+    if (U.indexOf('DHOPTALA')>=0){ route='R1'; wbName='Dhoptala'; }
+    else if (U.indexOf('RAILWAY')>=0 || U.indexOf('SIDING')>=0){ route='R2'; wbName='Sasti'; }
+    else return;
+    var aoa=XLSX.utils.sheet_to_json(wbk.Sheets[name],{header:1,defval:null,raw:true});
+    var hr=-1; for (var i=0;i<Math.min(aoa.length,8);i++){ if (aoa[i]&&String(aoa[i][0]).trim()==='Sr No.'){ hr=i; break; } }
+    if (hr<0) return;
+    var hdr=aoa[hr], netc=-1; for (var c=0;c<12;c++){ if (hdr[c]&&/WB$/.test(String(hdr[c]).trim().toUpperCase())){ netc=c; break; } }
+    if (netc<0) return;
+    var job = route==='R1' ? 'Job 1' : 'Job 2';
+    for (var r=hr+1;r<aoa.length;r++){
+      var row=aoa[r]; if (!row) continue;
+      var net=parseFloat(row[netc]); if (isNaN(net)||net<=0) continue;
+      var dt=combineDT(row[6],row[7]) || combineDT(row[1],null); if (!dt) continue;
+      var gross=parseFloat(row[netc-2]), tare=parseFloat(row[netc-1]);
+      out.push({ id:uid(), opDate:opDateOf(dt), date:ymd(dt), ts:dt.getTime(),
+        veh:String(row[2]||'').trim().toUpperCase(), job:job, route:route, wb:wbName,
+        gross:isNaN(gross)?null:gross, tare:isNaN(tare)?null:tare, net:net,
+        slip:String(row[3]||'').trim(), spId:null, synced:false });
+    }
+  });
+  return out;
+}
+function onWBPick(ev){
+  var f=ev.target.files[0]; if (!f) return;
+  var rd=new FileReader();
+  rd.onload=function(e){
+    try { var wbk=XLSX.read(e.target.result,{type:'array',cellDates:true}); WB_PENDING=parseWBWorkbook(wbk); previewWBImport(); }
+    catch(err){ alert('Could not read workbook: '+err.message); }
+  };
+  rd.readAsArrayBuffer(f);
+}
+function previewWBImport(){
+  var existing={}; weighs.forEach(function(e){ existing[wbKey(e)]=true; });
+  var neu=WB_PENDING.filter(function(e){ return !existing[wbKey(e)]; });
+  WB_PENDING._neu=neu;
+  var host=document.getElementById('wbImport');
+  if (!WB_PENDING.length){ host.innerHTML='No weighbridge rows found in this file.'; return; }
+  host.innerHTML='Parsed <b>'+WB_PENDING.length+'</b> rows — <b>'+neu.length+'</b> new, '+(WB_PENDING.length-neu.length)+' duplicate(s) skipped. '
+    + (neu.length? '<button class="btn green sm" style="width:auto;display:inline-block;padding:6px 12px;margin:6px 0 0" onclick="commitWBImport()">Import '+neu.length+' new</button>' : '');
+}
+function commitWBImport(){
+  var neu=(WB_PENDING&&WB_PENDING._neu)||[];
+  weighs=weighs.concat(neu); set('vt_weighs',weighs);
+  document.getElementById('wbImport').innerHTML=neu.length+' entries imported ✓ (duplicates skipped)';
+  document.getElementById('wbFile').value=''; WB_PENDING=null;
+  renderWB(); syncNow(true);
+}
+function fillWBDates(){
+  var sel=document.getElementById('wbDate'); if (!sel) return;
+  var cur=sel.value, dates={}; weighs.forEach(function(e){ dates[e.opDate]=true; });
+  var list=Object.keys(dates).filter(function(d){return d;}).sort().reverse();
+  sel.innerHTML='<option value="__all">All dates</option>'+list.map(function(d){ return '<option value="'+d+'">'+d+'</option>'; }).join('');
+  if (cur && (cur==='__all'||dates[cur])) sel.value=cur; else sel.value=list.length?list[0]:'__all';
+}
+function wbRowsForView(){ var sel=document.getElementById('wbDate'); var d=sel?sel.value:'__all';
+  return weighs.filter(function(e){ return (!d||d==='__all')?true:e.opDate===d; }); }
+function renderWB(){
+  fillWBDates();
+  var rows=wbRowsForView().slice().sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+  var host=document.getElementById('wbTable');
+  if (!rows.length){ host.innerHTML='<div class="muted-note">No entries for this view. Upload the weighbridge Excel or add manually.</div>'; }
+  else {
+    var h='<table class="dash"><thead><tr><th class="l">Date</th><th class="l">Vehicle</th><th>Job</th><th>Weigh-out</th><th>Gross</th><th>Tare</th><th>Net</th><th></th></tr></thead><tbody>';
+    rows.forEach(function(e){
+      h+='<tr><td class="l">'+e.opDate+'</td><td class="l">'+e.veh+'</td>'
+        +'<td><span class="tag '+(e.job==='Job 1'?'j1':'j2')+'">'+e.job.replace('Job ','J')+'</span></td>'
+        +'<td>'+(e.ts?new Date(e.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'—')+'</td>'
+        +'<td>'+(e.gross!=null?fmt(e.gross,2):'—')+'</td><td>'+(e.tare!=null?fmt(e.tare,2):'—')+'</td>'
+        +'<td style="font-weight:700">'+fmt(e.net,2)+'</td>'
+        +'<td style="white-space:nowrap"><span class="del" style="color:var(--blue)" data-edit="'+e.id+'">✎</span> <span class="del" data-del="'+e.id+'">✕</span></td></tr>';
+    });
+    host.innerHTML=h+'</tbody></table>';
+    Array.prototype.forEach.call(host.querySelectorAll('[data-edit]'), function(x){ x.onclick=function(){ openWBEdit(this.dataset.edit); }; });
+    Array.prototype.forEach.call(host.querySelectorAll('[data-del]'), function(x){ x.onclick=function(){ delWBEntry(this.dataset.del); }; });
+  }
+  var view=wbRowsForView();
+  document.getElementById('wbCount').textContent=view.length;
+  document.getElementById('wbTe').textContent=Math.round(view.reduce(function(a,e){ return a+(+e.net||0); },0));
+  document.getElementById('wbPend').textContent=weighs.filter(function(e){ return !e.synced; }).length;
+}
+function openWBEdit(id){
+  wbEditId=id||null;
+  var e = id ? weighs.filter(function(x){ return x.id===id; })[0] : null;
+  document.getElementById('wbmTitle').textContent = e?'Edit entry':'New weighbridge entry';
+  document.getElementById('wbmDate').value = e? e.opDate : ymd(new Date());
+  document.getElementById('wbmVeh').value = e? e.veh : '';
+  document.getElementById('wbmJob').value = e? e.job : 'Job 1';
+  document.getElementById('wbmTime').value = (e&&e.ts)? new Date(e.ts).toTimeString().slice(0,5) : '';
+  document.getElementById('wbmGross').value = (e&&e.gross!=null)? e.gross : '';
+  document.getElementById('wbmTare').value = (e&&e.tare!=null)? e.tare : '';
+  document.getElementById('wbmNet').value = e? e.net : '';
+  document.getElementById('wbmSlip').value = e? (e.slip||'') : '';
+  document.getElementById('wbModal').classList.add('show');
+}
+function closeWBEdit(){ document.getElementById('wbModal').classList.remove('show'); }
+function wbNet(){ var g=parseFloat(document.getElementById('wbmGross').value), t=parseFloat(document.getElementById('wbmTare').value);
+  if (!isNaN(g)&&!isNaN(t)) document.getElementById('wbmNet').value=Math.round((g-t)*100)/100; }
+function saveWBEntry(){
+  var veh=document.getElementById('wbmVeh').value.trim().toUpperCase().replace(/\s+/g,'');
+  var dateStr=document.getElementById('wbmDate').value, job=document.getElementById('wbmJob').value;
+  var timeStr=document.getElementById('wbmTime').value;
+  var gross=parseFloat(document.getElementById('wbmGross').value), tare=parseFloat(document.getElementById('wbmTare').value);
+  var net=parseFloat(document.getElementById('wbmNet').value);
+  if (!veh||!dateStr){ alert('Enter vehicle and date / गाड़ी और तारीख डालें'); return; }
+  if (isNaN(net)||net<=0){ alert('Enter valid net weight / सही नेट वज़न'); return; }
+  var dt=new Date(dateStr+'T'+(timeStr||'12:00'));
+  var rec = wbEditId ? weighs.filter(function(x){ return x.id===wbEditId; })[0] : { id:uid(), spId:null };
+  rec.opDate=opDateOf(dt); rec.date=ymd(dt); rec.ts=dt.getTime();
+  rec.veh=veh; rec.job=job; rec.route=routeOfJob(job); rec.wb=(job==='Job 1'?'Dhoptala':'Sasti');
+  rec.gross=isNaN(gross)?null:gross; rec.tare=isNaN(tare)?null:tare; rec.net=net;
+  rec.slip=document.getElementById('wbmSlip').value.trim();
+  rec.synced=false;
+  if (!wbEditId) weighs.push(rec);
+  set('vt_weighs',weighs);
+  closeWBEdit(); renderWB(); syncNow(true);
+}
+function delWBEntry(id){
+  if (!confirm('Delete this entry? / यह एंट्री हटाएं?')) return;
+  weighs=weighs.filter(function(x){ return x.id!==id; }); set('vt_weighs',weighs);
+  renderWB();
+}
+
+/* on-page tab-switch buttons (shows this role's tabs except Settings) */
+function renderSwitchBar(hostId, active){
+  var host=document.getElementById(hostId); if (!host) return;
+  var list=(DEMO?DEMO_TABS:TABS[cfg.role]).filter(function(tb){ return tb.id!=='Set'; });
+  host.innerHTML=list.map(function(tb){ return '<button class="'+(tb.id===active?'on':'')+'" onclick="showTab(\''+tb.id+'\')">'+tb.ico+' '+tb.t+'</button>'; }).join('');
+}
+
+/* =========================================================
+   ACCOUNTANT / ADMIN — review & correct supervisor trips
+   ========================================================= */
+var tripRows=[], tripEditIx=-1, tripsLoaded=false;
+async function loadTripRows(force){
+  tripsLoaded=true;
+  if (authConfigured() && signedInUser()){
+    var token=await getToken();
+    if (token){
+      var url=GRAPH+LIST.trip+'/items?expand=fields&$top=999', out=[];
+      try{
+        while (url){
+          var r=await fetch(url,{ headers:{'Authorization':'Bearer '+token} });
+          if (!r.ok) break;
+          var j=await r.json();
+          (j.value||[]).forEach(function(it){ var f=it.fields||{}; out.push({ spId:it.id, _log:null,
+            opDate:f.OpDate, shift:f.Shift, ts:(f.Timestamp?Date.parse(f.Timestamp):null),
+            cp:f.Checkpoint, veh:f.Vehicle, job:f.Job, route:f.Route, ev:f.Event, sup:f.Supervisor }); });
+          url=j['@odata.nextLink']||null;
+        }
+        tripRows=out; renderTrips(); return;
+      }catch(e){ console.log('trip load error',e); }
+    }
+  }
+  // local (demo / a supervisor's own device)
+  tripRows=logs.map(function(l){ return { spId:l.spId||null, _log:l, opDate:l.opDate, shift:l.shift, ts:l.ts,
+    cp:l.cp, veh:l.veh, job:l.job, route:l.route, ev:l.ev, sup:l.sup }; });
+  renderTrips();
+}
+function fillTripFilters(){
+  var ds={}, vs={}; tripRows.forEach(function(r){ if(r.opDate)ds[r.opDate]=1; if(r.veh)vs[r.veh]=1; });
+  var dd=document.getElementById('tripsDate'), vv=document.getElementById('tripsVeh');
+  var dl=Object.keys(ds).sort().reverse(), vl=Object.keys(vs).sort();
+  var dcur=dd.value, vcur=vv.value;
+  dd.innerHTML='<option value="__all">All dates</option>'+dl.map(function(d){return '<option>'+d+'</option>';}).join('');
+  vv.innerHTML='<option value="__all">All vehicles</option>'+vl.map(function(v){return '<option>'+v+'</option>';}).join('');
+  dd.value=(dcur&&(dcur==='__all'||ds[dcur]))?dcur:(dl.length?dl[0]:'__all');
+  vv.value=(vcur&&(vcur==='__all'||vs[vcur]))?vcur:'__all';
+}
+function renderTrips(){
+  renderSwitchBar('tripsNav','Trips');
+  if (!tripsLoaded){ loadTripRows(); return; }
+  fillTripFilters();
+  var dSel=document.getElementById('tripsDate').value, vSel=document.getElementById('tripsVeh').value;
+  var rows=tripRows.filter(function(r){ return (dSel==='__all'||r.opDate===dSel) && (vSel==='__all'||r.veh===vSel); })
+    .sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+  var host=document.getElementById('tripsTable');
+  if (!rows.length){ host.innerHTML='<div class="muted-note">No supervisor trip entries'+((authConfigured()&&!signedInUser())?' — sign in (Settings) to load from SharePoint.':'.')+'</div>'; return; }
+  var h='<table class="dash"><thead><tr><th class="l">Date</th><th class="l">Vehicle</th><th>Job</th><th>Checkpoint</th><th>Event</th><th>Time</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(r){ var ix=tripRows.indexOf(r);
+    var rs=r.cancelled?' style="opacity:.5;text-decoration:line-through"':'';
+    var edited=r.editedBy?(' <span title="edited by '+r.editedBy+'" style="color:var(--amber)">✎</span>'):'';
+    h+='<tr'+rs+'><td class="l">'+r.opDate+'</td><td class="l">'+r.veh+(r.cancelled?' <span class="tag" style="background:#fdecea;color:var(--red)">cancelled</span>':'')+'</td>'
+      +'<td><span class="tag '+(r.job==='Job 1'?'j1':'j2')+'">'+(r.job||'').replace('Job ','J')+'</span></td>'
+      +'<td>'+(r.cp||'—')+'</td><td class="ev '+(r.ev==='IN'?'IN':'OUT')+'" style="font-weight:700">'+r.ev+'</td>'
+      +'<td>'+(r.ts?new Date(r.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'—')+edited+'</td>'
+      +'<td style="white-space:nowrap"><span class="del" style="color:var(--blue)" data-edit="'+ix+'">✎</span> <span class="del" data-del="'+ix+'" title="'+(r.cancelled?'restore':'cancel')+'">'+(r.cancelled?'↩':'🚫')+'</span></td></tr>';
+  });
+  host.innerHTML=h+'</tbody></table>';
+  Array.prototype.forEach.call(host.querySelectorAll('[data-edit]'), function(x){ x.onclick=function(){ openTripEdit(+this.dataset.edit); }; });
+  Array.prototype.forEach.call(host.querySelectorAll('[data-del]'), function(x){ x.onclick=function(){ delTrip(+this.dataset.del); }; });
+}
+function openTripEdit(ix){
+  tripEditIx=ix; var r=tripRows[ix]; if (!r) return;
+  document.getElementById('tmInfo').textContent=r.veh+' · '+(r.cp||'')+' · '+r.opDate+(r.sup?(' · '+r.sup):'');
+  document.getElementById('tmEvent').value=r.ev==='IN'?'IN':'OUT';
+  document.getElementById('tmTime').value=r.ts?new Date(r.ts).toTimeString().slice(0,5):'';
+  document.getElementById('tripModal').classList.add('show');
+}
+function closeTripEdit(){ document.getElementById('tripModal').classList.remove('show'); }
+async function saveTripEdit(){
+  var r=tripRows[tripEditIx]; if (!r) return;
+  var ev=document.getElementById('tmEvent').value, tm=document.getElementById('tmTime').value;
+  var base=r.ts?new Date(r.ts):new Date(); if (tm){ var p=tm.split(':'); base.setHours(+p[0],+p[1],0,0); }
+  r.ev=ev; r.ts=base.getTime(); var by=cfg.name, at=Date.now();
+  r.editedBy=by; r.editedTs=at;
+  var timeStr=new Date(r.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  if (r._log){ r._log.ev=ev; r._log.ts=r.ts; r._log.time=timeStr; r._log.editedBy=by; r._log.editedTs=at; r._log.synced=false; set(LS.log,logs); syncNow(true); }
+  else if (r.spId){ var token=await getToken(); if (token){ try{ await fetch(GRAPH+LIST.trip+'/items/'+r.spId+'/fields',{ method:'PATCH',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({ Event:ev, Timestamp:new Date(r.ts).toISOString(), EntryTime:timeStr, EditedBy:by, EditedAt:new Date(at).toISOString() }) }); }catch(e){ alert('Update failed — will need re-try'); } } }
+  closeTripEdit(); renderTrips();
+}
+async function delTrip(ix){
+  var r=tripRows[ix]; if (!r) return;
+  var makeCancel = !r.cancelled;
+  if (!confirm((makeCancel?'Cancel this trip entry? It is kept for audit, not erased.':'Restore this cancelled entry?')+'\n\n'+r.veh+' · '+(r.cp||'')+' · '+r.ev)) return;
+  var now=Date.now();
+  r.cancelled=makeCancel; r.cancelledBy=makeCancel?cfg.name:''; r.cancelledTs=makeCancel?now:null;
+  if (r._log){ r._log.cancelled=makeCancel; r._log.cancelledBy=r.cancelledBy; r._log.cancelledTs=r.cancelledTs; r._log.synced=false; set(LS.log,logs); syncNow(true); }
+  else if (r.spId){ var token=await getToken(); if (token){ try{ await fetch(GRAPH+LIST.trip+'/items/'+r.spId+'/fields',{ method:'PATCH',
+      headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({ Cancelled:makeCancel?'Yes':'No', CancelledBy:(r.cancelledBy||''), CancelledAt:makeCancel?new Date(now).toISOString():'' }) }); }catch(e){ alert('Update failed — try again'); return; } } }
+  renderTrips();
+}
+function delTripFromEdit(){ var ix=tripEditIx; closeTripEdit(); delTrip(ix); }
+
+/* =========================================================
    SHAREPOINT SYNC (Microsoft Graph)
    Requires 3 SharePoint lists on oregenesis > WCLTransportation:
    - VehicleTripLog : Title(date),EntryTime,Timestamp,OpDate,Shift,Checkpoint,Supervisor,Vehicle,Job,Route,Event
@@ -881,7 +1244,7 @@ var AAD_CLIENT_ID = '218ae300-7a39-48f1-ad89-bbadca020b29';
 var AAD_TENANT    = 'e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2';
 var SITE_PATH     = CONFIG.SITE;
 var GRAPH = 'https://graph.microsoft.com/v1.0/sites/'+SITE_PATH+'/lists/';
-var LIST = { trip:'VehicleTripLog', diesel:'DieselLog', qty:CONFIG.QTY_LIST, status:'VehicleStatus' };
+var LIST = { trip:'VehicleTripLog', diesel:'DieselLog', qty:CONFIG.QTY_LIST, wb:'WeighbridgeLog', vstatus:'VehicleStatus' };
 var GRAPH_SCOPES = ['Sites.ReadWrite.All','User.Read'];
 var msalApp=null;
 function authConfigured(){ return AAD_CLIENT_ID.indexOf('__')===-1 && typeof msal!=='undefined'; }
@@ -919,6 +1282,11 @@ function dieselFields(x){ return { Title:x.date, EntryTime:x.time, Timestamp:new
   StartReading:(x.start!=null?x.start:''), StopReading:(x.stop!=null?x.stop:''), SlipNo:(x.slip||'') }; }
 function qtyFields(q){ return { Title:q.opDate, Shift:(q.shift||''), Route:q.route, Vehicle:(q.veh||''),
   SlipNo:(q.slip||''), LoadWeight:(q.loadTe||0), DestWeight:(q.destTe!=null?q.destTe:''), NetWeight:(q.loadTe||0) }; }
+function wbFields(e){ return { Title:e.date, OpDate:e.opDate, Vehicle:e.veh, Job:e.job, Route:e.route,
+  Weighbridge:e.wb, WeighOutTime:new Date(e.ts).toISOString(),
+  GrossWeight:(e.gross!=null?e.gross:''), TareWeight:(e.tare!=null?e.tare:''), NetWeight:e.net, SlipNo:(e.slip||'') }; }
+function vstatusFields(x){ return { Title:x.date, OpDate:x.opDate, Timestamp:new Date(x.ts).toISOString(),
+  Vehicle:x.veh, Status:x.status, Comment:(x.comment||''), By:(x.by||'') }; }
 // ---- auto-detect quantity columns from an arbitrary SharePoint field object ----
 function detectQtyCols(keys){
   function g(names){ for (var i=0;i<keys.length;i++){ var h=keys[i].toString().toLowerCase();
@@ -1002,31 +1370,54 @@ async function postItems(listName, items, toFields){
   }
   return {ok:ok,fail:fail};
 }
+async function postOrPatchWeighs(items){
+  var token=await getToken(); if (!token) return {ok:0,fail:items.length};
+  var ok=0, fail=0;
+  for (var i=0;i<items.length;i++){ var e=items[i];
+    try{
+      if (e.spId){
+        var pr=await fetch(GRAPH+LIST.wb+'/items/'+e.spId+'/fields',{ method:'PATCH',
+          headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:JSON.stringify(wbFields(e)) });
+        if (pr.ok){ e.synced=true; ok++; } else fail++;
+      } else {
+        var r=await fetch(GRAPH+LIST.wb+'/items',{ method:'POST',
+          headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}, body:JSON.stringify({ fields:wbFields(e) }) });
+        if (r.ok){ try{ var d=await r.json(); e.spId=d.id; }catch(e2){} e.synced=true; ok++; } else fail++;
+      }
+    }catch(err){ fail++; break; }
+  }
+  return {ok:ok,fail:fail};
+}
 async function syncNow(silent){
   if (!authConfigured()){ if(!silent) alert('Sync not configured'); return; }
   if (syncing) return; syncing=true;
   var pl=logs.filter(function(l){return !l.synced;});
   var pd=diesel.filter(function(x){return !x.synced;});
   var pq=qty.filter(function(q){return !q.synced;});
-  var ps=statusArr.filter(function(s){return !s.synced;});
-  if (!pl.length && !pd.length && !pq.length && !ps.length){ syncing=false; if(!silent) alert('All synced ✓'); return; }
+  var pw=weighs.filter(function(e){return !e.synced;});
+  var pv=vstatus.filter(function(x){return !x.synced;});
+  if (!pl.length && !pd.length && !pq.length && !pw.length && !pv.length){ syncing=false; if(!silent) alert('All synced ✓'); return; }
   var token=await getToken();
   if (!token){ syncing=false; if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
   var r1=await postItems(LIST.trip, pl, tripFields);
   var r2=await postItems(LIST.diesel, pd, dieselFields);
   var r3=await postItems(LIST.qty, pq, qtyFields);
-  var r4=await postItems(LIST.status, ps, statusFields);
-  set(LS.log,logs); set(LS.dsl,diesel); set(LS.qty,qty); set(LS.status,statusArr);
+  var r4=await postOrPatchWeighs(pw);
+  var r5=await postItems(LIST.vstatus, pv, vstatusFields);
+  set(LS.log,logs); set(LS.dsl,diesel); set(LS.qty,qty); set('vt_weighs',weighs); set('vt_vstatus',vstatus);
   syncing=false;
-  var ok=r1.ok+r2.ok+r3.ok+r4.ok, fail=r1.fail+r2.fail+r3.fail+r4.fail;
+  var ok=r1.ok+r2.ok+r3.ok+r4.ok+r5.ok, fail=r1.fail+r2.fail+r3.fail+r4.fail+r5.fail;
   if (!silent) alert(ok+' entries synced ✓'+(fail?(' · '+fail+' failed, will retry'):''));
   refreshSyncUI();
+  if (cfg && (cfg.role==='ACCT'||DEMO) && !document.getElementById('pgWB').classList.contains('hidden')) renderWB();
 }
 function refreshSyncUI(){
   var user=signedInUser();
   var pend=logs.filter(function(l){return !l.synced;}).length
           +diesel.filter(function(x){return !x.synced;}).length
-          +qty.filter(function(q){return !q.synced;}).length;
+          +qty.filter(function(q){return !q.synced;}).length
+          +weighs.filter(function(e){return !e.synced;}).length
+          +vstatus.filter(function(x){return !x.synced;}).length;
   var msg=!authConfigured() ? '⚠️ Sync not configured — entries stay on phone only'
     : (user ? ('👤 '+user+'<br>'+(pend?('⏳ <b>'+pend+'</b> entries pending'):'✅ All synced'))
             : '⚠️ Not signed in — entries stay on phone until sign-in');
@@ -1035,8 +1426,7 @@ function refreshSyncUI(){
   var ds=document.getElementById('dashSync'); if (ds) ds.innerHTML=msg;
   var db=document.getElementById('dashSignIn'); if (db) db.style.display=user?'none':'block';
 }
-setInterval(function(){ syncNow(true); }, 60000);
-document.addEventListener('visibilitychange',function(){ if(document.visibilityState==='visible') syncNow(true); });
+setInterval(function(){ syncNow(true); }, 180000);
 
 /* ---- Graph READ (admin dashboard) ---- */
 async function graphGetAll(listName){
@@ -1100,7 +1490,7 @@ async function loadDash(){
     if (CONFIG.QTY_SOURCE==='WORKBOOK') q=await readWorkbook();
     if (q===null) q=await graphGetAll(LIST.qty);
     if (t!==null || q!==null){
-      DASH.trips = (t||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, veh:f.Vehicle, job:f.Job, route:f.Route, cp:f.Checkpoint, ev:f.Event }; });
+      DASH.trips = (t||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, veh:f.Vehicle, job:f.Job, route:f.Route, cp:f.Checkpoint, ev:f.Event, ts:(f.Timestamp?Date.parse(f.Timestamp):null), cancelled:(f.Cancelled==='Yes') }; });
       DASH.diesel = (d||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, assetType:f.AssetType, assetId:f.AssetId, litres:+f.Litres||0, hours:(f.RunHours!==''&&f.RunHours!=null)?+f.RunHours:null, km:(f.RunKm!==''&&f.RunKm!=null)?+f.RunKm:null, route:f.Route||'' }; });
       if (CONFIG.QTY_SOURCE==='WORKBOOK'){
         DASH.qty = buildQtyFromWorkbook(q);   // D WB tabs only, route from tab name
@@ -1113,7 +1503,7 @@ async function loadDash(){
     }
   }
   // fallback: local only (this device's own entries + imported qty)
-  DASH.trips = logs.map(function(l){ return {opDate:l.opDate,shift:l.shift,veh:l.veh,job:l.job,route:l.route,cp:l.cp,ev:l.ev}; });
+  DASH.trips = logs.map(function(l){ return {opDate:l.opDate,shift:l.shift,veh:l.veh,job:l.job,route:l.route,cp:l.cp,ev:l.ev,ts:l.ts,cancelled:l.cancelled}; });
   DASH.diesel = diesel.map(function(x){ return {opDate:x.opDate,shift:x.shift,assetType:x.assetType,assetId:x.assetId,litres:x.litres,hours:x.hours||0,route:x.route||''}; });
   DASH.qty = qty.map(function(q){ return {opDate:q.opDate,shift:q.shift,route:q.route,veh:q.veh,loadTe:q.loadTe||0,destTe:(q.destTe!=null?q.destTe:null)}; });
   DASH.loadedFrom = (authConfigured()&&signedInUser())?'SharePoint (empty)':'local device only';
@@ -1276,22 +1666,16 @@ function renderMonth(day){
     var rows='';
     var combReq=0, combShort=0;
     [['R1','Route 1'],['R2','Route 2']].forEach(function(rr){
-      var rStart=parseYMD((CONFIG.ROUTE_START&&CONFIG.ROUTE_START[rr[0]])||CONFIG.OP_START);
-      var rOpStartInM=(mStart<rStart)?rStart:mStart;
-      var rTotalDays=Math.max(0,daysBetween(rOpStartInM,opEndInM)+1);
-      var rElapsedDays=(elapsedEnd<rOpStartInM)?0:Math.max(0,daysBetween(rOpStartInM,elapsedEnd)+1);
-      var rRemainDays=Math.max(0,rTotalDays-rElapsedDays);
       var achieved=DASH.qty.filter(function(q){
-        return q.route===rr[0] && q.opDate>=ymd(rOpStartInM) && q.opDate<=ymd(elapsedEnd);
+        return q.route===rr[0] && q.opDate>=ymd(opStartInM) && q.opDate<=ymd(elapsedEnd);
       }).reduce(function(a,q){return a+(+q.loadTe||0);},0);
-      var targetToDate=CONFIG.DAILY_TARGET_TE*rElapsedDays;
-      var monthTarget=CONFIG.DAILY_TARGET_TE*rTotalDays;
+      var targetToDate=CONFIG.DAILY_TARGET_TE*elapsedDays;
+      var monthTarget=CONFIG.DAILY_TARGET_TE*totalDays;
       var shortfall=targetToDate-achieved;
-      var reqDaily=rRemainDays>0?((monthTarget-achieved)/rRemainDays):0;
+      var reqDaily=remainDays>0?((monthTarget-achieved)/remainDays):0;
       combReq+=reqDaily; combShort+=shortfall;
       rows+='<div style="margin-top:6px;border-top:1px solid #eef2f7;padding-top:6px">'
         +'<div class="kv"><span class="k"><b>'+rr[1]+'</b></span><span class="v">'+fmt(achieved,0)+' / '+fmt(monthTarget,0)+' Te</span></div>'
-        +'<div class="kv"><span class="k">Operating days</span><span class="v">'+rElapsedDays+' / '+rTotalDays+' ('+rRemainDays+' left)</span></div>'
         +'<div class="kv"><span class="k">Shortfall to date</span><span class="v '+(shortfall>0?'bad':'good')+'">'+(shortfall>0?'-':'+')+fmt(Math.abs(shortfall),0)+' Te</span></div>'
         +'<div class="kv"><span class="k">Req. daily for rest of month</span><span class="v '+(reqDaily>CONFIG.DAILY_TARGET_TE?'bad':'good')+'">'+fmt(reqDaily,0)+' Te/day</span></div>';
       rows+='</div>';
@@ -1310,7 +1694,7 @@ function cpRole(job){ return job==='Job 1' ? {src:'Dhoptala',dst:'CHP'} : {src:'
 function tfmt(ts){ return ts ? new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '—'; }
 function reconstructTripsFrom(events, day){
   var byVeh={};
-  events.filter(function(l){ return (!day||l.opDate===day) && l.ts; }).forEach(function(l){ (byVeh[l.veh]=byVeh[l.veh]||[]).push(l); });
+  events.filter(function(l){ return (!day||l.opDate===day) && l.ts && !l.cancelled; }).forEach(function(l){ (byVeh[l.veh]=byVeh[l.veh]||[]).push(l); });
   var out=[];
   Object.keys(byVeh).forEach(function(veh){
     var evs=byVeh[veh].slice().sort(function(a,b){ return a.ts-b.ts; });
@@ -1549,7 +1933,7 @@ function renderSet(){
   vehicles.forEach(function(v,i){
     var d=document.createElement('div'); d.className='logrow';
     d.innerHTML='<span style="font-weight:700">'+v.num+'</span><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+v.job+'</span><span class="del" data-i="'+i+'">✕</span>';
-    d.querySelector('.del').onclick=function(){ if (confirm('Remove '+v.num+'?')){ vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); } };
+    d.querySelector('.del').onclick=function(){ if (confirm('Remove '+v.num+' from the live list?\nIts past trips & records are kept. / पुराना डेटा सुरक्षित रहेगा।')){ vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); } };
     vm.appendChild(d);
   });
 }
@@ -1610,6 +1994,16 @@ function seedDemo(){
     j1.forEach(function(v){ qty.push({opDate:dstr,shift:'',route:'R1',veh:v.num,loadTe:Math.round(300+rnd()*70),destTe:null}); });
     j2.forEach(function(v){ qty.push({opDate:dstr,shift:'',route:'R2',veh:v.num,loadTe:Math.round(180+rnd()*50),destTe:null}); });
   }
+  // sample weighbridge (accountant) entries — today + yesterday, a few vehicles
+  weighs=[]; var wt=new Date(); wt.setHours(10,0,0,0);
+  [[j1[0].num,'Job 1','Dhoptala',54.3,17.0],[j1[1].num,'Job 1','Dhoptala',41.4,13.7],
+   [j2[0].num,'Job 2','Sasti',56.6,16.3],[j2[1].num,'Job 2','Sasti',60.2,17.1],
+   [j1[2].num,'Job 1','Dhoptala',55.0,17.0]].forEach(function(e,i){
+    var d=new Date(wt.getTime()-(i*37)*60000);
+    weighs.push({ id:'w'+i+'demo', opDate:opDateOf(d), date:ymd(d), ts:d.getTime(), veh:e[0], job:e[1],
+      route:routeOfJob(e[1]), wb:e[2], gross:e[3], tare:e[4], net:Math.round((e[3]-e[4])*100)/100,
+      slip:String(1001+i), spId:null, synced:true });
+  });
 }
 
 function startDemo(){ DEMO=true; seedDemo(); boot(true); }
