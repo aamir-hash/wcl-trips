@@ -618,8 +618,8 @@ function editSetup(){
   showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
 }
 function showOnly(id){
-  ['pgSetup','pgMain','pgLog','pgDiesel','pgDash','pgData','pgSet'].forEach(function(p){
-    document.getElementById(p).classList.toggle('hidden', p!==id);
+  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgDash','pgData','pgSet'].forEach(function(p){
+    var el=document.getElementById(p); if (el) el.classList.toggle('hidden', p!==id);
   });
 }
 
