@@ -389,6 +389,21 @@
   </div>
 </div>
 
+<!-- ================= ADMIN: GPS LIVE ================= -->
+<div class="wrap hidden" id="pgGps">
+  <div class="stat">
+    <div class="box"><div class="n" id="gpsDevices">0</div><div class="l">GPS devices / जीपीएस</div></div>
+    <div class="box"><div class="n" id="gpsMoving">0</div><div class="l">Ignition ON / चालू</div></div>
+    <div class="box"><div class="n" id="gpsVar" style="color:var(--amber)">0</div><div class="l">Trip mismatches / अंतर</div></div>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">📍 GPS Live vs Logged Trips</h3>
+    <div class="muted-note" id="gpsSrc">Independent BlackBuck GPS trip count beside supervisor-logged trips. Refreshes from GpsLive.</div>
+    <button class="btn green sm" onclick="loadGps()">🔄 Refresh GPS / रिफ्रेश</button>
+  </div>
+  <div class="card" style="overflow-x:auto"><div id="gpsTable"></div></div>
+</div>
+
 <!-- ================= SETTINGS (all roles) ================= -->
 <div class="wrap hidden" id="pgSet">
   <div class="card">
@@ -480,7 +495,21 @@ var CONFIG = {
   // SharePoint site that holds the trip/diesel lists this app WRITES to.
   SITE: 'oregenesis.sharepoint.com:/sites/rpcmat:',
   // Dashboard auto-refresh interval (seconds) — pulls fresh data on its own.
-  DASH_REFRESH_SEC: 120
+  DASH_REFRESH_SEC: 120,
+  // ---- GPS module (BlackBuck) ----
+  GPS_LIST: 'GpsLive',          // SharePoint list the poller fills every minute
+  GEO_RADIUS_M: 350,            // geofence radius for arrival detection
+  GEOFENCE: {                   // confirmed centres (lat, long)
+    Dhoptala: [19.8122116, 79.3370179],
+    Sasti:    [19.8112580, 79.3041404],
+    Siding:   [19.8383790, 79.3484910]
+  },
+  // BlackBuck device code -> current vehicle (device label = 'MH00AA'+code). 0009/0010 open.
+  DEVICE_MAP: {
+    '0001':'MH34BZ9720','0002':'MH34BZ5147','0003':'MH34BZ9540','0004':'MH34BZ7110',
+    '0005':'MH34BZ7740','0006':'MH34BZ5148','0007':'MH34BZ5760','0008':'MH34BG4889',
+    '0011':'MH35AJ5399','0012':'MH35AJ5299','0013':'MH35AJ5599','0014':'MH34BZ8243','0015':'MH34BZ0480'
+  }
 };
 
 // Machinery fleet. unit HR = hour-meter (avg = L/hr) ; KM = odometer (avg = KMPL).
@@ -618,7 +647,7 @@ function editSetup(){
   showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
 }
 function showOnly(id){
-  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgDash','pgData','pgSet'].forEach(function(p){
+  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgGps','pgDash','pgData','pgSet'].forEach(function(p){
     var el=document.getElementById(p); if (el) el.classList.toggle('hidden', p!==id);
   });
 }
@@ -630,11 +659,11 @@ var TABS = {
   SUP: [ {id:'Main',ico:'🚛',t:'Vehicles'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   DSL: [ {id:'Diesel',ico:'⛽',t:'Diesel'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   ACCT:[ {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
-  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
+  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'GPS',ico:'📍',t:'GPS Live'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
 };
 // demo shows every screen in one device
 var DEMO_TABS = [ {id:'Main',ico:'🚛',t:'Job1/2'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Diesel',ico:'⛽',t:'Diesel'},
-  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
+  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'GPS',ico:'📍',t:'GPS'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
 function boot(skipLock){
   if (!cfg) return;
   if (!cfg.pinH){ showOnly('pgSetup'); return; }
@@ -671,7 +700,7 @@ function tryUnlock(){
   }
 }
 function showTab(t){
-  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', Set:'pgSet' };
+  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', GPS:'pgGps', Set:'pgSet' };
   showOnly(pageMap[t]);
   document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('act'); });
   var at=document.getElementById('tab'+t); if (at) at.classList.add('act');
@@ -680,6 +709,7 @@ function showTab(t){
   if (t==='Diesel') renderDiesel();
   if (t==='WB') renderWB();
   if (t==='Trips') renderTrips();
+  if (t==='GPS') loadGps();
   if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
@@ -1236,6 +1266,82 @@ async function delTrip(ix){
 function delTripFromEdit(){ var ix=tripEditIx; closeTripEdit(); delTrip(ix); }
 
 /* =========================================================
+   GPS LIVE (BlackBuck) — independent trip verification
+   Reads the GpsLive list the poller fills; maps device -> vehicle;
+   shows GPS-counted trips beside supervisor-logged trips.
+   ========================================================= */
+var GPS_ROWS=[], GPS_DEMO=[];
+function deviceToVeh(label){
+  if (!label) return '';
+  var s=String(label).toUpperCase();
+  if (CONFIG.DEVICE_MAP[s]) return CONFIG.DEVICE_MAP[s];            // raw code '0002'
+  var m=s.match(/(\d{3,4})\s*$/);                                   // 'MH00AA0002' -> '0002'
+  if (m){ var code=('000'+m[1]).slice(-4); if (CONFIG.DEVICE_MAP[code]) return CONFIG.DEVICE_MAP[code]; }
+  return s; // already a real vehicle number
+}
+function gpsPick(f, names){ var keys=Object.keys(f); for (var i=0;i<keys.length;i++){ var h=keys[i].toLowerCase();
+  for (var j=0;j<names.length;j++){ if (h.indexOf(names[j])>=0) return f[keys[i]]; } } return null; }
+function mapGpsRow(f){
+  var rawVeh = gpsPick(f,['vehicle','truck','device','imei']);
+  var veh = deviceToVeh(rawVeh);
+  var v0 = vehicles.filter(function(v){ return v.num===veh; })[0];
+  var ts = gpsPick(f,['lastseen','timestamp','updated','time']);
+  return { veh:veh, job:(v0?v0.job:''), lat:+gpsPick(f,['latitude','lat'])||null, lng:+gpsPick(f,['longitude','long','lng'])||null,
+    speed:+gpsPick(f,['speed'])||0, ign:String(gpsPick(f,['ignition','ign'])||'').toUpperCase().indexOf('ON')>=0 || gpsPick(f,['ignition'])===true,
+    km:+gpsPick(f,['travelled','kmtoday','km'])||0, gpsTrips:+gpsPick(f,['tripstoday','gpstrips','trips'])||0,
+    addr:gpsPick(f,['address','location'])||'', ts:(ts?(typeof ts==='number'?ts:Date.parse(ts)):null) };
+}
+async function readGpsLive(){
+  var rows=await graphGetAll(LIST.gps); if (rows===null) return null;
+  return rows.map(mapGpsRow);
+}
+// supervisor-logged completed trips per vehicle for an op-day (from tap data)
+async function loggedTripsByVeh(day){
+  var t=null; if (authConfigured() && signedInUser()) t=await graphGetAll(LIST.trip);
+  var src=(t||logs).map(function(l){ return { opDate:l.opDate||l.OpDate, veh:l.veh||l.Vehicle, job:l.job||l.Job,
+    cp:l.cp||l.Checkpoint, ev:l.ev||l.Event, ts:l.ts||(l.Timestamp?Date.parse(l.Timestamp):null), cancelled:(l.cancelled||l.Cancelled==='Yes') }; });
+  var trips=reconstructTripsFrom(src, day);
+  var m={}; trips.forEach(function(t){ if (t.dstIn||t.dstOut||t.srcOut){ m[t.veh]=(m[t.veh]||0)+1; } });
+  return m;
+}
+async function loadGps(){
+  var day=curOpDate();
+  if (DEMO){ GPS_ROWS=GPS_DEMO.slice(); }
+  else {
+    var g=await readGpsLive();
+    GPS_ROWS = g||[];
+  }
+  var logged = await loggedTripsByVeh(day);
+  GPS_ROWS.forEach(function(r){ r.logged=logged[r.veh]||0; });
+  document.getElementById('gpsSrc').innerHTML = DEMO ? 'Sample GPS data (demo).'
+    : (signedInUser()? ('Live from GpsLive · '+(GPS_ROWS.length?'ok':'no rows yet — is the poller running?')) : '⚠️ Sign in (Settings) to load GPS.');
+  renderGps();
+}
+function renderGps(){
+  var host=document.getElementById('gpsTable');
+  var rows=GPS_ROWS.slice().sort(function(a,b){ return (a.job||'').localeCompare(b.job||'')||a.veh.localeCompare(b.veh); });
+  var moving=0, mism=0;
+  var h='<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Job</th><th>Ign</th><th>Speed</th><th>Km today</th><th>GPS trips</th><th>Logged</th><th>Δ</th><th>Seen</th><th>Map</th></tr></thead><tbody>';
+  rows.forEach(function(r){
+    if (r.ign) moving++;
+    var d=(r.gpsTrips||0)-(r.logged||0); if (d!==0) mism++;
+    var seen = r.ts? new Date(r.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}) : '—';
+    var mapl = (r.lat&&r.lng)? '<a href="https://www.google.com/maps?q='+r.lat+','+r.lng+'" target="_blank">📍</a>' : '—';
+    h+='<tr><td class="l">'+r.veh+'</td><td><span class="tag '+(r.job==='Job 1'?'j1':'j2')+'">'+((r.job||'—').replace('Job ','J'))+'</span></td>'
+      +'<td>'+(r.ign?'<span style="color:var(--green)">ON</span>':'<span style="color:var(--muted)">off</span>')+'</td>'
+      +'<td>'+fmt(r.speed,0)+'</td><td>'+fmt(r.km,0)+'</td>'
+      +'<td style="font-weight:700">'+(r.gpsTrips||0)+'</td><td>'+(r.logged||0)+'</td>'
+      +'<td'+(d!==0?' style="color:var(--red);font-weight:700"':'')+'>'+(d>0?'+':'')+d+'</td>'
+      +'<td>'+seen+'</td><td>'+mapl+'</td></tr>';
+  });
+  if (!rows.length) h+='<tr><td class="l" colspan="10" style="text-align:left;color:var(--muted)">No GPS data. Once the BlackBuck poller fills GpsLive, devices appear here.</td></tr>';
+  host.innerHTML=h+'</tbody></table>';
+  document.getElementById('gpsDevices').textContent=rows.length;
+  document.getElementById('gpsMoving').textContent=moving;
+  document.getElementById('gpsVar').textContent=mism;
+}
+
+/* =========================================================
    SHAREPOINT SYNC (Microsoft Graph)
    Requires 3 SharePoint lists on oregenesis > WCLTransportation:
    - VehicleTripLog : Title(date),EntryTime,Timestamp,OpDate,Shift,Checkpoint,Supervisor,Vehicle,Job,Route,Event
@@ -1246,7 +1352,7 @@ var AAD_CLIENT_ID = '218ae300-7a39-48f1-ad89-bbadca020b29';
 var AAD_TENANT    = 'e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2';
 var SITE_PATH     = CONFIG.SITE;
 var GRAPH = 'https://graph.microsoft.com/v1.0/sites/'+SITE_PATH+'/lists/';
-var LIST = { trip:'VehicleTripLog', diesel:'DieselLog', qty:CONFIG.QTY_LIST, wb:'WeighbridgeLog', vstatus:'VehicleStatus' };
+var LIST = { trip:'VehicleTripLog', diesel:'DieselLog', qty:CONFIG.QTY_LIST, wb:'WeighbridgeLog', vstatus:'VehicleStatus', gps:CONFIG.GPS_LIST };
 var GRAPH_SCOPES = ['Sites.ReadWrite.All','User.Read'];
 var msalApp=null;
 function authConfigured(){ return AAD_CLIENT_ID.indexOf('__')===-1 && typeof msal!=='undefined'; }
@@ -2019,6 +2125,15 @@ function seedDemo(){
       route:routeOfJob(e[1]), wb:e[2], gross:e[3], tare:e[4], net:Math.round((e[3]-e[4])*100)/100,
       slip:String(1001+i), spId:null, synced:true });
   });
+  // sample GPS live rows (BlackBuck) — a few mapped vehicles, some with GPS-vs-logged variance
+  var gc=CONFIG.GEOFENCE, gnow=Date.now();
+  GPS_DEMO=[
+   {veh:'MH34BZ0480',job:'Job 1',lat:gc.Dhoptala[0],lng:gc.Dhoptala[1],speed:0,ign:true, km:84,gpsTrips:3,addr:'Dhoptala Stock Yard',ts:gnow-3*60000},
+   {veh:j1[2].num,   job:'Job 1',lat:gc.Sasti[0],lng:gc.Sasti[1],speed:34,ign:true, km:71,gpsTrips:2,addr:'En route to CHP',ts:gnow-1*60000},
+   {veh:'MH34BZ8243',job:'Job 2',lat:gc.Siding[0],lng:gc.Siding[1],speed:0,ign:false,km:96,gpsTrips:4,addr:'Ballarpur Siding',ts:gnow-6*60000},
+   {veh:j2[0].num,   job:'Job 2',lat:gc.Sasti[0]+0.004,lng:gc.Sasti[1]+0.006,speed:41,ign:true,km:88,gpsTrips:3,addr:'SOCM → Siding',ts:gnow-2*60000},
+   {veh:j1[3].num,   job:'Job 1',lat:gc.Dhoptala[0]-0.003,lng:gc.Dhoptala[1]+0.002,speed:28,ign:true,km:63,gpsTrips:2,addr:'Near Dhoptala',ts:gnow-4*60000}
+  ];
 }
 
 function startDemo(){ DEMO=true; seedDemo(); boot(true); }
