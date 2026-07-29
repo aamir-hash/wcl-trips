@@ -104,7 +104,20 @@
   .tag { font-size:10.5px; padding:1px 6px; border-radius:10px; }
   .tag.j1 { background:#e3f2fd; color:#1565c0; } .tag.j2 { background:#f3e5f5; color:#7b1fa2; }
   .muted-note { font-size:12px; color:var(--muted); margin:4px 0; }
-  #gpsMap { height:320px; width:100%; border-radius:12px; z-index:0; }
+  #gpsMap { height:360px; width:100%; border-radius:12px; z-index:0; background:#eef2f6; }
+  /* WhatsApp-style live markers */
+  .leaflet-marker-icon.vmark { transition: transform 1.1s linear; background:transparent!important; border:0!important; }
+  .vpin { position:relative; display:flex; flex-direction:column; align-items:center; transform:translate(-50%,-100%); }
+  .vpin .vbubble { font-size:10px; font-weight:700; color:#fff; padding:2px 7px; border-radius:11px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.35); }
+  .vpin .vstem { width:2px; height:9px; margin-top:-1px; }
+  .vpin.run .vbubble { background:#2e7d32; } .vpin.run .vstem { background:#2e7d32; }
+  .vpin.stop .vbubble { background:#6b7a8c; } .vpin.stop .vstem { background:#6b7a8c; }
+  .vpin .vdot { position:absolute; bottom:-6px; width:11px; height:11px; border-radius:50%; border:2px solid #fff; }
+  .vpin.run .vdot { background:#2e7d32; box-shadow:0 0 0 0 rgba(46,125,50,.6); animation:vpulse 1.6s infinite; }
+  .vpin.stop .vdot { background:#6b7a8c; }
+  @keyframes vpulse { 0%{box-shadow:0 0 0 0 rgba(46,125,50,.55);} 70%{box-shadow:0 0 0 12px rgba(46,125,50,0);} 100%{box-shadow:0 0 0 0 rgba(46,125,50,0);} }
+  .livedot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#e53935; margin-right:5px; animation:vpulse2 1.4s infinite; }
+  @keyframes vpulse2 { 0%{opacity:1;} 50%{opacity:.3;} 100%{opacity:1;} }
   .switchbar { display:flex; gap:8px; margin-bottom:10px; }
   .switchbar button { flex:1; padding:9px 4px; font-size:13px; font-weight:600; border:1.5px solid #cfd8e3;
     border-radius:9px; background:#fff; color:var(--blue); cursor:pointer; }
@@ -735,7 +748,8 @@ function showTab(t){
   if (t==='Diesel') renderDiesel();
   if (t==='WB') renderWB();
   if (t==='Trips') renderTrips();
-  if (t==='GPS') loadGps();
+  if (_gpsTimer){ clearInterval(_gpsTimer); _gpsTimer=null; }
+  if (t==='GPS'){ _gUserMoved=false; loadGps(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
   if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
@@ -1411,20 +1425,42 @@ async function loggedTripsByVeh(day){
   var m={}; trips.forEach(function(t){ if (t.dstIn||t.dstOut||t.srcOut){ m[t.veh]=(m[t.veh]||0)+1; } });
   return m;
 }
+// demo: nudge each vehicle along a heading so markers visibly move each refresh (WhatsApp-style)
+function stepDemoMotion(){
+  var gc=CONFIG.GEOFENCE;
+  var targets={ 'Job 1':gc.Sasti, 'Job 2':gc.Siding };
+  GPS_DEMO.forEach(function(r){
+    if (!r.ign){ r.speed=0; return; }                 // stopped vehicles don't move
+    var tgt=targets[r.job]||gc.Sasti;
+    var dLat=tgt[0]-r.lat, dLng=tgt[1]-r.lng, dist=Math.sqrt(dLat*dLat+dLng*dLng);
+    if (dist<0.0015){ // arrived — loop back toward source to keep it lively
+      var src=(r.job==='Job 2')?gc.Sasti:gc.Dhoptala; r.lat=src[0]; r.lng=src[1]; r.gpsTrips=(r.gpsTrips||0)+1; r.km+=(6+Math.round(Math.random()*4));
+    } else {
+      var stepF=0.10+Math.random()*0.05;               // 10-15% of the way each tick
+      r.lat+=dLat*stepF; r.lng+=dLng*stepF;
+      r.speed=28+Math.round(Math.random()*22); r.km+=0.6;
+    }
+    r.ts=Date.now();
+  });
+}
 async function loadGps(){
   var day=curOpDate();
-  if (DEMO){ GPS_ROWS=GPS_DEMO.slice(); }
+  if (DEMO){ stepDemoMotion(); GPS_ROWS=GPS_DEMO.map(function(r){ return Object.assign({},r); }); }
   else {
     var g=await readGpsLive();
     GPS_ROWS = g||[];
   }
   var logged = await loggedTripsByVeh(day);
   GPS_ROWS.forEach(function(r){ r.logged=logged[r.veh]||0; });
-  document.getElementById('gpsSrc').innerHTML = DEMO ? 'Sample GPS data (demo).'
-    : (signedInUser()? ('Live from GpsLive · '+(GPS_ROWS.length?'ok':'no rows yet — is the poller running?')) : '⚠️ Sign in (Settings) to load GPS.');
+  var now=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.getElementById('gpsSrc').innerHTML = DEMO
+    ? '<span class="livedot"></span>LIVE (demo) · '+GPS_ROWS.length+' vehicles · auto-refresh 15s · updated '+now
+    : (signedInUser()
+        ? ((GPS_ROWS.length?'<span class="livedot"></span>':'')+'Live from GpsLive · '+(GPS_ROWS.length?(GPS_ROWS.length+' vehicles · updated '+now):'no rows yet — is the poller running?'))
+        : '⚠️ Sign in (Settings) to load GPS.');
   renderGps();
 }
-var _gmap=null, _gLayer=null;
+var _gmap=null, _gLayer=null, _gTrailLayer=null, _gMarkers={}, _gTrails={}, _gTrailPolys={}, _gUserMoved=false, _gpsTimer=null;
 function gpsMapMsg(txt){ var el=document.getElementById('gpsMap'); if (el) el.innerHTML='<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:13px">'+txt+'</div>'; }
 function ensureGpsMap(){
   if (typeof L==='undefined'){ gpsMapMsg('🗺️ Map library (Leaflet) did not load — likely the network is blocking cdnjs.cloudflare.com. The table below still works, and each row has a 📍 Google-Maps link.'); return null; }
@@ -1437,22 +1473,48 @@ function ensureGpsMap(){
       L.circle([c[0],c[1]],{radius:CONFIG.GEO_RADIUS_M,color:'#1a3c6e',weight:1,fillColor:'#1a3c6e',fillOpacity:0.08}).addTo(_gmap).bindTooltip(k+' zone');
     });
     _gLayer=L.layerGroup().addTo(_gmap);
+  _gTrailLayer=L.layerGroup().addTo(_gmap);
+  _gmap.on('dragstart zoomstart', function(){ _gUserMoved=true; });
   } catch(e){ gpsMapMsg('🗺️ Map failed to initialise: '+e.message); return null; }
   return _gmap;
 }
+function shortVeh(v){ return String(v||'').replace(/^MH\d{2}/,''); }   // compact label
+function vIcon(r){
+  var cls=r.ign?'run':'stop';
+  return L.divIcon({ className:'vmark', html:'<div class="vpin '+cls+'"><span class="vbubble">'+shortVeh(r.veh)+(r.ign&&r.speed?(' '+fmt(r.speed,0)):'')+'</span><span class="vstem"></span><span class="vdot"></span></div>', iconSize:[0,0] });
+}
+function vPopup(r){
+  return '<b>'+r.veh+'</b> <span class="tag '+(r.job==='Job 1'?'j1':'j2')+'">'+((r.job||'—').replace('Job ','J'))+'</span><br>'
+    +(r.ign?'🟢 moving':'⚪ stopped')+' · '+fmt(r.speed,0)+' km/h · '+fmt(r.km,0)+' km today<br>'
+    +'GPS trips: <b>'+(r.gpsTrips||0)+'</b> · logged: '+(r.logged||0)
+    +(r.addr?('<br>📍 '+r.addr):'')
+    +(r.ts?('<br><span class="muted-note">seen '+new Date(r.ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})+'</span>'):'');
+}
 function updateGpsMap(rows){
   var m=ensureGpsMap(); if (!m) return;
-  // container may still be 0-height on first paint (tab just shown) — invalidate a few times
   [60,250,600].forEach(function(ms){ setTimeout(function(){ try{ m.invalidateSize(); }catch(e){} }, ms); });
-  _gLayer.clearLayers();
-  var pts=[];
+  var seen={}, pts=[];
   rows.forEach(function(r){ if (!r.lat||!r.lng) return;
-    var color=r.ign?'#2e7d32':'#6b7a8c';
-    var mk=L.circleMarker([r.lat,r.lng],{radius:7,color:color,fillColor:color,fillOpacity:0.9,weight:2});
-    mk.bindPopup('<b>'+r.veh+'</b> ('+(r.job||'')+')<br>'+(r.ign?'🟢 running':'⚪ stopped')+' · '+fmt(r.speed,0)+' km/h<br>GPS trips: '+(r.gpsTrips||0)+' · logged: '+(r.logged||0)+(r.addr?('<br>'+r.addr):''));
-    mk.addTo(_gLayer); pts.push([r.lat,r.lng]);
+    seen[r.veh]=true; var ll=[r.lat,r.lng]; pts.push(ll);
+    // trail history (cap 25 points), only add when position actually changed
+    var tr=_gTrails[r.veh]=_gTrails[r.veh]||[];
+    var last=tr[tr.length-1];
+    if (!last || last[0]!==r.lat || last[1]!==r.lng){ tr.push(ll); if (tr.length>25) tr.shift(); }
+    // marker: glide to new position (WhatsApp-style) or create
+    var mk=_gMarkers[r.veh];
+    if (mk){ mk.setLatLng(ll); mk.setIcon(vIcon(r)); mk.setPopupContent(vPopup(r)); }
+    else { mk=L.marker(ll,{icon:vIcon(r)}); mk.bindPopup(vPopup(r)); mk.addTo(_gLayer); _gMarkers[r.veh]=mk; }
+    // trail polyline (fading blue) for moving vehicles
+    var pl=_gTrailPolys[r.veh];
+    if (tr.length>1){
+      if (pl) pl.setLatLngs(tr);
+      else { pl=L.polyline(tr,{color:(r.job==='Job 2'?'#7b1fa2':'#1565c0'),weight:3,opacity:0.55}); pl.addTo(_gTrailLayer); _gTrailPolys[r.veh]=pl; }
+    }
   });
-  if (pts.length){ try{ m.fitBounds(pts,{padding:[30,30],maxZoom:14}); }catch(e){} }
+  // drop markers/trails for vehicles no longer reporting
+  Object.keys(_gMarkers).forEach(function(v){ if (!seen[v]){ _gLayer.removeLayer(_gMarkers[v]); delete _gMarkers[v]; if(_gTrailPolys[v]){ _gTrailLayer.removeLayer(_gTrailPolys[v]); delete _gTrailPolys[v]; } delete _gTrails[v]; } });
+  // auto-fit only until the user pans/zooms (then respect their view — like following)
+  if (pts.length && !_gUserMoved){ try{ m.fitBounds(pts,{padding:[40,40],maxZoom:14}); }catch(e){} }
 }
 function renderGps(){
   var host=document.getElementById('gpsTable');
