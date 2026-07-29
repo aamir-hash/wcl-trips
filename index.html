@@ -6,6 +6,8 @@
 <title>WCL Trip & Fuel Logger — Mohd Aamir Transport</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
   :root {
     --blue:#1a3c6e; --green:#2e7d32; --red:#c62828; --amber:#ef6c00; --purple:#6a1b9a;
@@ -102,6 +104,7 @@
   .tag { font-size:10.5px; padding:1px 6px; border-radius:10px; }
   .tag.j1 { background:#e3f2fd; color:#1565c0; } .tag.j2 { background:#f3e5f5; color:#7b1fa2; }
   .muted-note { font-size:12px; color:var(--muted); margin:4px 0; }
+  #gpsMap { height:320px; width:100%; border-radius:12px; z-index:0; }
   .switchbar { display:flex; gap:8px; margin-bottom:10px; }
   .switchbar button { flex:1; padding:9px 4px; font-size:13px; font-weight:600; border:1.5px solid #cfd8e3;
     border-radius:9px; background:#fff; color:var(--blue); cursor:pointer; }
@@ -401,6 +404,7 @@
     <div class="muted-note" id="gpsSrc">Independent BlackBuck GPS trip count beside supervisor-logged trips. Refreshes from GpsLive.</div>
     <button class="btn green sm" onclick="loadGps()">🔄 Refresh GPS / रिफ्रेश</button>
   </div>
+  <div class="card"><div id="gpsMap"></div></div>
   <div class="card" style="overflow-x:auto"><div id="gpsTable"></div></div>
 </div>
 
@@ -1317,6 +1321,32 @@ async function loadGps(){
     : (signedInUser()? ('Live from GpsLive · '+(GPS_ROWS.length?'ok':'no rows yet — is the poller running?')) : '⚠️ Sign in (Settings) to load GPS.');
   renderGps();
 }
+var _gmap=null, _gLayer=null;
+function ensureGpsMap(){
+  if (typeof L==='undefined') return null;      // Leaflet blocked/offline
+  if (_gmap) return _gmap;
+  var el=document.getElementById('gpsMap'); if (!el) return null;
+  _gmap=L.map('gpsMap',{zoomControl:true}).setView([19.821,79.335],12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(_gmap);
+  Object.keys(CONFIG.GEOFENCE).forEach(function(k){ var c=CONFIG.GEOFENCE[k];
+    L.circle([c[0],c[1]],{radius:CONFIG.GEO_RADIUS_M,color:'#1a3c6e',weight:1,fillColor:'#1a3c6e',fillOpacity:0.08}).addTo(_gmap).bindTooltip(k+' zone');
+  });
+  _gLayer=L.layerGroup().addTo(_gmap);
+  return _gmap;
+}
+function updateGpsMap(rows){
+  var m=ensureGpsMap(); if (!m) return;
+  setTimeout(function(){ try{ m.invalidateSize(); }catch(e){} }, 60);
+  _gLayer.clearLayers();
+  var pts=[];
+  rows.forEach(function(r){ if (!r.lat||!r.lng) return;
+    var color=r.ign?'#2e7d32':'#6b7a8c';
+    var mk=L.circleMarker([r.lat,r.lng],{radius:7,color:color,fillColor:color,fillOpacity:0.9,weight:2});
+    mk.bindPopup('<b>'+r.veh+'</b> ('+(r.job||'')+')<br>'+(r.ign?'🟢 running':'⚪ stopped')+' · '+fmt(r.speed,0)+' km/h<br>GPS trips: '+(r.gpsTrips||0)+' · logged: '+(r.logged||0)+(r.addr?('<br>'+r.addr):''));
+    mk.addTo(_gLayer); pts.push([r.lat,r.lng]);
+  });
+  if (pts.length){ try{ m.fitBounds(pts,{padding:[30,30],maxZoom:14}); }catch(e){} }
+}
 function renderGps(){
   var host=document.getElementById('gpsTable');
   var rows=GPS_ROWS.slice().sort(function(a,b){ return (a.job||'').localeCompare(b.job||'')||a.veh.localeCompare(b.veh); });
@@ -1336,6 +1366,7 @@ function renderGps(){
   });
   if (!rows.length) h+='<tr><td class="l" colspan="10" style="text-align:left;color:var(--muted)">No GPS data. Once the BlackBuck poller fills GpsLive, devices appear here.</td></tr>';
   host.innerHTML=h+'</tbody></table>';
+  updateGpsMap(rows);
   document.getElementById('gpsDevices').textContent=rows.length;
   document.getElementById('gpsMoving').textContent=moving;
   document.getElementById('gpsVar').textContent=mism;
