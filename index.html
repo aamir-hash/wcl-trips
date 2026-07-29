@@ -217,6 +217,11 @@
     </select>
     <div class="muted-note" style="margin-top:4px">Your IN/OUT tap is logged at this checkpoint. Whether it's source or destination depends on the vehicle's job.</div>
   </div>
+  <div class="switchbar" id="mainJobBar">
+    <button data-j="Job 1" onclick="setMainJob('Job 1')">JOB 1</button>
+    <button data-j="Job 2" onclick="setMainJob('Job 2')">JOB 2</button>
+    <button data-j="all" onclick="setMainJob('all')">Both</button>
+  </div>
   <div class="stat">
     <div class="box"><div class="n" id="stIn">0</div><div class="l">Inside now / अभी अंदर</div></div>
     <div class="box"><div class="n" id="stTrips">0</div><div class="l">Entries this shift / इस शिफ्ट</div></div>
@@ -745,6 +750,8 @@ function setDemoCp(){
   document.getElementById('hdrTitle').textContent='🎬 DEMO — '+cfg.cp;
   renderMain();
 }
+var mainJob='Job 1';
+function setMainJob(j){ mainJob=j; renderMain(); }
 function renderMain(){
   var bar=document.getElementById('demoCpBar');
   if (bar){ bar.classList.toggle('hidden', !DEMO); if (DEMO) document.getElementById('demoCp').value=cfg.cp; }
@@ -775,6 +782,12 @@ function renderMain(){
   function statTxt(c){ return '🟢 '+c.run+' running'+(c.stop?(' · ⛔ '+c.stop+' down'):''); }
   var j1s=document.getElementById('job1Stat'), j2s=document.getElementById('job2Stat');
   if (j1s) j1s.innerHTML=statTxt(cnt['Job 1']); if (j2s) j2s.innerHTML=statTxt(cnt['Job 2']);
+  // Job filter — show only the selected job's vehicles
+  var sj1=(mainJob==='all'||mainJob==='Job 1'), sj2=(mainJob==='all'||mainJob==='Job 2');
+  document.getElementById('job1Sec').classList.toggle('hidden', !sj1);
+  document.getElementById('job2Sec').classList.toggle('hidden', !sj2);
+  var mb=document.getElementById('mainJobBar');
+  if (mb) Array.prototype.forEach.call(mb.querySelectorAll('button'), function(b){ b.classList.toggle('on', b.dataset.j===mainJob); });
   document.getElementById('stIn').textContent=inCount;
   document.getElementById('stTrips').textContent=shiftLogs().length;
   document.getElementById('stShift').textContent=sh;
