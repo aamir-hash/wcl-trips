@@ -279,6 +279,23 @@
   </div>
   <h2 class="sec">This Shift's Diesel / इस शिफ्ट का डीज़ल</h2>
   <div class="card" id="dieselList"></div>
+  <h2 class="sec">📜 Issued — history (till date) / अब तक</h2>
+  <div class="card">
+    <div style="display:flex;gap:8px">
+      <div style="flex:1"><label style="margin-top:0">Filter by / फ़िल्टर</label>
+        <select id="dslHistJob" onchange="onDslHistJob()">
+          <option value="all">All (tippers + machines)</option>
+          <option value="Job 1">Job 1 tippers</option>
+          <option value="Job 2">Job 2 tippers</option>
+          <option value="MACHINE">Machines</option>
+        </select>
+      </div>
+      <div style="flex:1"><label style="margin-top:0">Vehicle / गाड़ी</label>
+        <select id="dslHistVeh" onchange="renderDslHistory()"></select>
+      </div>
+    </div>
+    <div id="dslHistOut" style="overflow-x:auto"></div>
+  </div>
   <button class="btn" onclick="exportDieselCSV()">⬇ Download CSV / सीएसवी</button>
 </div>
 
@@ -880,16 +897,34 @@ function logTripTable(trips, title, dot){
   });
   return h+'</tbody></table>';
 }
+function breakdownSection(day){
+  var tfmt2=function(ts){ return ts?new Date(ts).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'—'; };
+  var vs=vstatus.filter(function(x){ return x.opDate===day; }).sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+  var down=vehicles.filter(function(v){ return v.status==='Stopped'; });
+  var h='<h2 class="sec" style="margin-top:16px">⛔ Breakdowns / Status</h2>';
+  if (down.length){
+    h+='<div class="muted-note">Currently down / अभी बंद:</div><table class="dash"><thead><tr><th class="l">Vehicle</th><th>Job</th><th class="l">Reason</th><th>Since</th></tr></thead><tbody>';
+    down.forEach(function(v){ h+='<tr><td class="l">'+v.num+'</td><td><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+(v.job||'').replace('Job ','J')+'</span></td><td class="l">'+(v.statusComment||'—')+'</td><td>'+(v.statusTs?(tfmt2(v.statusTs)+' · '+mins(v.statusTs)):'—')+'</td></tr>'; });
+    h+='</tbody></table>';
+  }
+  if (vs.length){
+    h+='<div class="muted-note" style="margin-top:8px">Status changes today / आज के बदलाव:</div><table class="dash"><thead><tr><th>Time</th><th class="l">Vehicle</th><th>Status</th><th class="l">Reason</th></tr></thead><tbody>';
+    vs.forEach(function(x){ h+='<tr><td>'+tfmt2(x.ts)+'</td><td class="l">'+x.veh+'</td><td style="font-weight:700;color:'+(x.status==='Stopped'?'var(--red)':'var(--green)')+'">'+(x.status==='Stopped'?'⛔ STOPPED':'✅ RUNNING')+'</td><td class="l">'+(x.comment||'—')+'</td></tr>'; });
+    h+='</tbody></table>';
+  }
+  if (!down.length && !vs.length) h+='<div class="muted-note">No breakdowns / status changes today.</div>';
+  return h;
+}
 function renderLog(){
   var el=document.getElementById('logList');
   var day=curOpDate();
   var all=reconstructTripsFrom(logs, day).sort(function(a,b){ return (b.srcIn||b.dstOut||0)-(a.srcIn||a.dstOut||0); });
-  if (!all.length){ el.innerHTML='<div style="color:var(--muted);padding:10px">No trips today / आज कोई ट्रिप नहीं</div>'; return; }
   var j1=all.filter(function(t){return t.job==='Job 1';}), j2=all.filter(function(t){return t.job==='Job 2';});
-  el.innerHTML='<div class="muted-note">Each trip records 4 stamps: Source IN → Source OUT → Dest IN → Dest OUT. (Blank = not yet logged by that checkpoint.)</div>'
-    + logTripTable(j1,'JOB 1 — Dhoptala → CHP','#1565c0')
-    + '<div style="height:14px"></div>'
-    + logTripTable(j2,'JOB 2 — SOCM → Siding','#7b1fa2');
+  var tripHtml = all.length
+    ? ('<div class="muted-note">Each trip records 4 stamps: Source IN → Source OUT → Dest IN → Dest OUT. (Blank = not yet logged by that checkpoint.)</div>'
+       + logTripTable(j1,'JOB 1 — Dhoptala → CHP','#1565c0') + '<div style="height:14px"></div>' + logTripTable(j2,'JOB 2 — SOCM → Siding','#7b1fa2'))
+    : '<div class="muted-note">No trips today / आज कोई ट्रिप नहीं</div>';
+  el.innerHTML = tripHtml + breakdownSection(day);
   Array.prototype.forEach.call(el.querySelectorAll('.del'), function(x){
     x.onclick=function(){
       if (!confirm('Delete this trip’s entries? / यह ट्रिप हटाएं?')) return;
@@ -1016,9 +1051,7 @@ function renderDiesel(){
       + (Object.keys(tU).length? ('<div style="height:12px"></div>'+dieselGroupTable(tU,'Other vehicles','#6b7a8c',false,empty)) : '');
   }
   var html = '<h2 class="sec" style="margin:2px 2px 6px">This shift ('+curShift()+')</h2>'
-    + tables(ents,'None this shift / इस शिफ्ट कुछ नहीं')
-    + '<h2 class="sec" style="margin:18px 2px 6px">Overall issued — till date</h2>'
-    + tables(diesel,'None yet / अभी कुछ नहीं');
+    + tables(ents,'None this shift / इस शिफ्ट कुछ नहीं');
   var rec=ents.slice().reverse();
   if (rec.length){
     html+='<div class="muted-note" style="margin-top:12px">Entries this shift (tap ✕ to delete):</div>';
@@ -1035,6 +1068,63 @@ function renderDiesel(){
   document.getElementById('dLit').textContent=Math.round(totL);
   document.getElementById('dCnt').textContent=ents.length;
   document.getElementById('dShift').textContent=curShift();
+  onDslHistJob();
+}
+/* ---- history (till date): cascade Job -> Vehicle, or Machines ---- */
+function dslHistAssets(jobSel){
+  var jobOf={}; vehicles.forEach(function(v){ jobOf[v.num]=v.job; });
+  var ids={};
+  diesel.forEach(function(x){
+    var keep=false;
+    if (jobSel==='all') keep=true;
+    else if (jobSel==='MACHINE') keep=(x.assetType==='MACHINE');
+    else keep=(x.assetType==='TIPPER' && jobOf[x.assetId]===jobSel);
+    if (keep) ids[x.assetId]=true;
+  });
+  return Object.keys(ids).sort();
+}
+function onDslHistJob(){
+  var js=document.getElementById('dslHistJob'); if (!js) return;
+  var jobSel=js.value, vs=document.getElementById('dslHistVeh');
+  var assets=dslHistAssets(jobSel), prev=vs.value;
+  var opts='<option value="all">All ('+assets.length+')</option>';
+  assets.forEach(function(a){ opts+='<option value="'+a+'">'+a+'</option>'; });
+  vs.innerHTML=opts;
+  if (assets.indexOf(prev)>=0) vs.value=prev;
+  renderDslHistory();
+}
+function renderDslHistory(){
+  var out=document.getElementById('dslHistOut'); if (!out) return;
+  var jobSel=document.getElementById('dslHistJob').value;
+  var vehSel=document.getElementById('dslHistVeh').value;
+  var jobOf={}; vehicles.forEach(function(v){ jobOf[v.num]=v.job; });
+  var rows=diesel.filter(function(x){
+    if (jobSel==='MACHINE'){ if (x.assetType!=='MACHINE') return false; }
+    else if (jobSel!=='all'){ if (!(x.assetType==='TIPPER' && jobOf[x.assetId]===jobSel)) return false; }
+    if (vehSel && vehSel!=='all' && x.assetId!==vehSel) return false;
+    return true;
+  });
+  if (!rows.length){ out.innerHTML='<div class="muted-note">No diesel issued for this filter. / कोई डीज़ल नहीं</div>'; return; }
+  if (vehSel && vehSel!=='all'){
+    // per-vehicle: date-wise entries
+    var totL=0, totH=0;
+    var h='<table class="dash"><thead><tr><th class="l">Date</th><th>Shift</th><th>Litres</th><th>Hrs/Km</th></tr></thead><tbody>';
+    rows.slice().sort(function(a,b){return (a.ts||0)-(b.ts||0);}).forEach(function(x){ totL+=x.litres; totH+=(x.hours!=null?x.hours:(x.km||0));
+      h+='<tr><td class="l">'+(x.opDate||x.date)+'</td><td>'+(x.shift||'')+'</td><td>'+fmt(x.litres,0)+'</td><td>'+(x.hours!=null?fmt(x.hours,1):(x.km?fmt(x.km,0):'—'))+'</td></tr>';
+    });
+    h+='<tr style="font-weight:700"><td class="l">Total — '+vehSel+'</td><td>'+rows.length+' fills</td><td>'+fmt(totL,0)+' L</td><td>'+(totH?fmt(totH,1):'')+'</td></tr>';
+    out.innerHTML=h+'</tbody></table>';
+  } else {
+    // aggregate by asset
+    var m={}; rows.forEach(function(x){ var g=m[x.assetId]=m[x.assetId]||{lit:0,cnt:0,hrs:0}; g.lit+=x.litres; g.cnt++; g.hrs+=(x.hours!=null?x.hours:(x.km||0)); });
+    var keys=Object.keys(m).sort(), totL=0, totH=0, isMach=(jobSel==='MACHINE');
+    var h='<table class="dash"><thead><tr><th class="l">'+(isMach?'Machine':'Vehicle')+'</th><th>Fills</th><th>Litres</th>'+(isMach?'<th>Hours</th>':'')+'</tr></thead><tbody>';
+    keys.forEach(function(k){ var g=m[k]; totL+=g.lit; totH+=g.hrs;
+      h+='<tr><td class="l">'+k+'</td><td>'+g.cnt+'</td><td>'+fmt(g.lit,0)+'</td>'+(isMach?('<td>'+fmt(g.hrs,1)+'</td>'):'')+'</tr>';
+    });
+    h+='<tr style="font-weight:700"><td class="l">Total ('+keys.length+')</td><td></td><td>'+fmt(totL,0)+' L</td>'+(isMach?('<td>'+fmt(totH,1)+'</td>'):'')+'</tr>';
+    out.innerHTML=h+'</tbody></table>';
+  }
 }
 function exportDieselCSV(){
   if (!diesel.length){ alert('No data'); return; }
@@ -1335,21 +1425,25 @@ async function loadGps(){
   renderGps();
 }
 var _gmap=null, _gLayer=null;
+function gpsMapMsg(txt){ var el=document.getElementById('gpsMap'); if (el) el.innerHTML='<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:13px">'+txt+'</div>'; }
 function ensureGpsMap(){
-  if (typeof L==='undefined') return null;      // Leaflet blocked/offline
+  if (typeof L==='undefined'){ gpsMapMsg('🗺️ Map library (Leaflet) did not load — likely the network is blocking cdnjs.cloudflare.com. The table below still works, and each row has a 📍 Google-Maps link.'); return null; }
   if (_gmap) return _gmap;
   var el=document.getElementById('gpsMap'); if (!el) return null;
-  _gmap=L.map('gpsMap',{zoomControl:true}).setView([19.821,79.335],12);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(_gmap);
-  Object.keys(CONFIG.GEOFENCE).forEach(function(k){ var c=CONFIG.GEOFENCE[k];
-    L.circle([c[0],c[1]],{radius:CONFIG.GEO_RADIUS_M,color:'#1a3c6e',weight:1,fillColor:'#1a3c6e',fillOpacity:0.08}).addTo(_gmap).bindTooltip(k+' zone');
-  });
-  _gLayer=L.layerGroup().addTo(_gmap);
+  try {
+    _gmap=L.map('gpsMap',{zoomControl:true}).setView([19.821,79.335],12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(_gmap);
+    Object.keys(CONFIG.GEOFENCE).forEach(function(k){ var c=CONFIG.GEOFENCE[k];
+      L.circle([c[0],c[1]],{radius:CONFIG.GEO_RADIUS_M,color:'#1a3c6e',weight:1,fillColor:'#1a3c6e',fillOpacity:0.08}).addTo(_gmap).bindTooltip(k+' zone');
+    });
+    _gLayer=L.layerGroup().addTo(_gmap);
+  } catch(e){ gpsMapMsg('🗺️ Map failed to initialise: '+e.message); return null; }
   return _gmap;
 }
 function updateGpsMap(rows){
   var m=ensureGpsMap(); if (!m) return;
-  setTimeout(function(){ try{ m.invalidateSize(); }catch(e){} }, 60);
+  // container may still be 0-height on first paint (tab just shown) — invalidate a few times
+  [60,250,600].forEach(function(ms){ setTimeout(function(){ try{ m.invalidateSize(); }catch(e){} }, ms); });
   _gLayer.clearLayers();
   var pts=[];
   rows.forEach(function(r){ if (!r.lat||!r.lng) return;
@@ -2079,21 +2173,36 @@ function commitQty(){
    SETTINGS
    ========================================================= */
 function renderSet(){
-  var info='<b>Role:</b> '+({SUP:'Supervisor',DSL:'Diesel Operator',ADM:'Admin'}[cfg.role])+'<br>'
+  var info='<b>Role:</b> '+({SUP:'Supervisor',DSL:'Diesel Operator',ACCT:'Accountant',ADM:'Admin'}[cfg.role]||cfg.role)+'<br>'
     +'<b>Name:</b> '+cfg.name+'<br>'
     +(cfg.cp?('<b>Checkpoint:</b> '+cfg.cp+'<br>'):'')
     +(cfg.point?('<b>Fuel point:</b> '+cfg.point+'<br>'):'')
-    +'<b>Trip entries:</b> '+logs.length+' · <b>Diesel:</b> '+diesel.length+' · <b>Qty rows:</b> '+qty.length;
+    +'<b>Trip entries:</b> '+logs.length+' · <b>Diesel:</b> '+diesel.length+' · <b>Weighbridge:</b> '+weighs.length;
   document.getElementById('setInfo').innerHTML=info;
-  document.getElementById('vehCard').style.display=(cfg.role==='SUP'||cfg.role==='ADM')?'block':'none';
+  document.getElementById('vehCard').style.display=(cfg.role==='SUP'||cfg.role==='ADM'||DEMO)?'block':'none';
   refreshSyncUI();
   var vm=document.getElementById('vehManage'); if (!vm) return; vm.innerHTML='';
+  var canSwap=(cfg.role==='ADM'||DEMO);
   vehicles.forEach(function(v,i){
     var d=document.createElement('div'); d.className='logrow';
-    d.innerHTML='<span style="font-weight:700">'+v.num+'</span><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+v.job+'</span><span class="del" data-i="'+i+'">✕</span>';
+    d.innerHTML='<span style="font-weight:700">'+v.num+'</span><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+v.job+'</span>'
+      +(v.status==='Stopped'?'<span class="pill" style="background:#fdecea;color:var(--red)">⛔</span>':'')
+      +(canSwap?'<span class="pill" style="cursor:pointer;background:#e3f2fd;color:#1565c0" data-swap="'+i+'">⇄ switch job</span>':'')
+      +'<span class="del" data-i="'+i+'">✕</span>';
     d.querySelector('.del').onclick=function(){ if (confirm('Remove '+v.num+' from the live list?\nIts past trips & records are kept. / पुराना डेटा सुरक्षित रहेगा।')){ vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); } };
+    var sw=d.querySelector('[data-swap]'); if (sw) sw.onclick=function(){ switchVehJob(+this.dataset.swap); };
     vm.appendChild(d);
   });
+}
+// Admin: move a vehicle to the other job. Past trips keep their original job (logs snapshot job per event),
+// so nothing is deleted — only future trips use the new job.
+function switchVehJob(i){
+  var v=vehicles[i]; if (!v) return;
+  var nj = v.job==='Job 1' ? 'Job 2' : 'Job 1';
+  if (!confirm('Switch '+v.num+' from '+v.job+' → '+nj+'?\nPast trips stay under '+v.job+'; new trips go under '+nj+'. No data is deleted. / पुराना डेटा सुरक्षित रहेगा।')) return;
+  v.job=nj; set(LS.veh, vehicles);
+  renderSet();
+  if (!document.getElementById('pgMain').classList.contains('hidden')) renderMain();
 }
 function clearOld(){
   var cut=Date.now()-30*24*3600*1000, before=logs.length+diesel.length;
@@ -2178,6 +2287,12 @@ function seedDemo(){
    {veh:j2[0].num,   job:'Job 2',lat:gc.Sasti[0]+0.004,lng:gc.Sasti[1]+0.006,speed:41,ign:true,km:88,gpsTrips:3,addr:'SOCM → Siding',ts:gnow-2*60000},
    {veh:j1[3].num,   job:'Job 1',lat:gc.Dhoptala[0]-0.003,lng:gc.Dhoptala[1]+0.002,speed:28,ign:true,km:63,gpsTrips:2,addr:'Near Dhoptala',ts:gnow-4*60000}
   ];
+  // sample breakdowns — a couple of vehicles down with reasons
+  vstatus=[];
+  function _down(v,reason,hrsAgo){ if(!v) return; v.status='Stopped'; v.statusComment=reason; v.statusTs=Date.now()-hrsAgo*3600000;
+    vstatus.push({ id:uid(), date:today(), ts:v.statusTs, opDate:opDateOf(new Date(v.statusTs)), veh:v.num, status:'Stopped', comment:reason, by:'Demo Supervisor', synced:true }); }
+  _down(j1[5],'Tyre puncture — under repair',2);
+  _down(j2[6],'Engine overheating — maintenance',5);
 }
 
 function startDemo(){ DEMO=true; seedDemo(); boot(true); }
