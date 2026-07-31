@@ -69,7 +69,7 @@ async function pollOnce() {
   const gt = await getGraphToken();
 
   const r = await fetch(BB_URL, { headers: { Authorization: 'Token ' + bb, 'x-aaa-enabled': 'true', Accept: 'application/json' } });
-  if (!r.ok) { console.log('BlackBuck ' + r.status + ' — token may have expired; re-seed BLACKBUCK_TOKEN'); return; }
+  if (!r.ok) { const _b = await r.text().catch(function(){return '';}); let _ip=''; try { _ip = await fetch('https://api.ipify.org').then(function(x){return x.text();}); } catch(e){} console.log('BlackBuck ' + r.status + ' runnerIP=' + _ip + ' body=' + _b.slice(0,300)); return; }
   const trucks = (await r.json()).list || [];
 
   const devMap = {};
