@@ -428,6 +428,21 @@
 </div>
 
 <!-- ================= ADMIN: GPS LIVE ================= -->
+<div class="wrap hidden" id="pgPlay">
+<div class="muted-note">Route Playback — pick a vehicle and date, then Play to watch it move along its recorded path (source: GpsHistory).</div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0">
+<select id="playVeh"></select>
+<input type="date" id="playDate">
+<button class="btn green sm" onclick="loadPlay()">Load</button>
+<button class="btn sm" id="playBtn" onclick="playToggle()">▶ Play</button>
+<span id="playClock" style="font-weight:700;min-width:52px;text-align:center">--:--</span>
+<select id="playSpeed"><option value="60">60×</option><option value="180" selected>180×</option><option value="480">480×</option><option value="1200">1200×</option></select>
+</div>
+<input type="range" id="playScrub" min="0" max="1000" value="0" style="width:100%">
+<div id="playInfo" class="muted-note" style="margin-top:6px">No data loaded.</div>
+<div id="playMap" style="height:60vh;min-height:340px;border-radius:10px;margin-top:8px"></div>
+</div>
+
 <div class="wrap hidden" id="pgGps">
   <div class="stat">
     <div class="box"><div class="n" id="gpsDevices">0</div><div class="l">GPS devices / जीपीएस</div></div>
@@ -686,7 +701,7 @@ function editSetup(){
   showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
 }
 function showOnly(id){
-  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgGps','pgDash','pgData','pgSet'].forEach(function(p){
+  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgGps','pgPlay','pgDash','pgData','pgSet'].forEach(function(p){
     var el=document.getElementById(p); if (el) el.classList.toggle('hidden', p!==id);
   });
 }
@@ -698,11 +713,11 @@ var TABS = {
   SUP: [ {id:'Main',ico:'🚛',t:'Vehicles'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   DSL: [ {id:'Diesel',ico:'⛽',t:'Diesel'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   ACCT:[ {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
-  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'GPS',ico:'📍',t:'GPS Live'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
+  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'GPS',ico:'📍',t:'GPS Live'},{id:'Play',ico:'▶',t:'Playback'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
 };
 // demo shows every screen in one device
 var DEMO_TABS = [ {id:'Main',ico:'🚛',t:'Job1/2'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Diesel',ico:'⛽',t:'Diesel'},
-  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'GPS',ico:'📍',t:'GPS'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
+  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'GPS',ico:'📍',t:'GPS'},{id:'Play',ico:'▶',t:'Playback'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
 function boot(skipLock){
   if (!cfg) return;
   if (!cfg.pinH){ showOnly('pgSetup'); return; }
@@ -739,7 +754,7 @@ function tryUnlock(){
   }
 }
 function showTab(t){
-  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', GPS:'pgGps', Set:'pgSet' };
+  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', GPS:'pgGps',Play:'pgPlay', Set:'pgSet' };
   showOnly(pageMap[t]);
   document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('act'); });
   var at=document.getElementById('tab'+t); if (at) at.classList.add('act');
@@ -747,7 +762,8 @@ function showTab(t){
   if (t==='Log') renderLog();
   if (t==='Diesel') renderDiesel();
   if (t==='WB') renderWB();
-  if (t==='Trips') renderTrips();
+  if (t==='Trips') renderTrips()
+    if (t==='Play') loadPlay();
   if (_gpsTimer){ clearInterval(_gpsTimer); _gpsTimer=null; }
   if (t==='GPS'){ _gUserMoved=false; loadGps(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
   if (t==='Dash'){ setToday(); loadDash(); }
@@ -1460,6 +1476,26 @@ async function loadGps(){
         : '⚠️ Sign in (Settings) to load GPS.');
   renderGps();
 }
+
+/* ---- Route Playback (historic GpsHistory animation) ---- */
+var _pmap=null,_pLayer=null,_pTrack=[],_pVeh='',_pPlaying=false,_pClock=0,_pT0=0,_pT1=0,_pRAF=0,_pLast=0,_pMarker=null,_pTrail=null;
+var _PZ={DHOPTALA:{lat:19.8122116,lng:79.3370179,r:350,n:'Dhoptala'},SASTI_CHP:{lat:19.8112580,lng:79.3041404,r:350,n:'Sasti CHP'},BALLARPUR:{lat:19.8383790,lng:79.3484910,r:350,n:'Ballarpur'}};
+var _PUN={'Job 1':'SASTI_CHP','Job 2':'BALLARPUR'};
+function _phav(a,b,c,d){var R=6371000,r=function(x){return x*Math.PI/180;};var dLat=r(c-a),dLng=r(d-b);var s=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLng/2)*Math.sin(dLng/2);return 2*R*Math.asin(Math.sqrt(s));}
+function _pzone(la,ln){for(var k in _PZ){if(_phav(la,ln,_PZ[k].lat,_PZ[k].lng)<=_PZ[k].r)return k;}return null;}
+function _pist(ms){return new Date(ms).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});}
+function _pfmt(ms){return new Date(ms).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});}
+function _pEnsureMap(){if(_pmap)return;_pmap=L.map('playMap').setView([19.821,79.322],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(_pmap);for(var k in _PZ){var z=_PZ[k];L.circle([z.lat,z.lng],{radius:z.r,color:'#8b5cf6',weight:1,fillOpacity:.08}).addTo(_pmap).bindTooltip(z.n);}_pLayer=L.layerGroup().addTo(_pmap);}
+async function _pVehList(){try{var dm=await graphGetAll('DeviceMap');var vs=(dm||[]).map(function(it){var f=it.fields||it;return f.Vehicle;}).filter(function(v){return v;});return Array.from(new Set(vs)).sort();}catch(e){return [];}}
+async function loadPlay(){_pEnsureMap();setTimeout(function(){if(_pmap)_pmap.invalidateSize();},80);var sel=document.getElementById('playVeh');var dt=document.getElementById('playDate');if(!dt.value)dt.value=new Date().toLocaleDateString('en-CA');if(sel.options.length===0){var vs=await _pVehList();sel.innerHTML=vs.map(function(v){return '<option>'+v+'</option>';}).join('');}var veh=sel.value;var day=dt.value;document.getElementById('playInfo').textContent='Loading…';var rows;try{rows=await graphGetAll('GpsHistory');}catch(e){document.getElementById('playInfo').textContent='Could not read GpsHistory (sign in via Settings).';return;}var track=(rows||[]).map(function(it){var f=it.fields||it;return {veh:f.Vehicle,job:f.Job,t:Date.parse(f.Ts),lat:+f.Latitude,lng:+f.Longitude,spd:+f.Speed||0};}).filter(function(p){return p.veh===veh&&isFinite(p.t)&&_pist(p.t)===day;}).sort(function(a,b){return a.t-b.t;});_pTrack=track;_pVeh=veh;if(_pLayer)_pLayer.clearLayers();if(track.length===0){document.getElementById('playInfo').textContent='No GPS history for '+veh+' on '+day+'. The poller fills this list every minute once deployed.';document.getElementById('playClock').textContent='--:--';return;}_pT0=track[0].t;_pT1=track[track.length-1].t;_pClock=_pT0;var latlngs=track.map(function(p){return [p.lat,p.lng];});_pTrail=L.polyline([],{color:'#f59e0b',weight:3}).addTo(_pLayer);_pMarker=L.marker([track[0].lat,track[0].lng]).addTo(_pLayer);_pmap.fitBounds(L.latLngBounds(latlngs).pad(0.2));_pRender();}
+function _pPosAt(ms){var tr=_pTrack;if(ms<=tr[0].t)return tr[0];for(var i=1;i<tr.length;i++){if(ms<=tr[i].t){var a=tr[i-1],b=tr[i],f=(ms-a.t)/((b.t-a.t)||1);return {lat:a.lat+(b.lat-a.lat)*f,lng:a.lng+(b.lng-a.lng)*f,spd:Math.round(a.spd+(b.spd-a.spd)*f)};}}return tr[tr.length-1];}
+function _pTrips(ms){var uz=_PUN[_pTrack[0]&&_pTrack[0].job];if(!uz)return 0;var n=0,prev=null;for(var i=0;i<_pTrack.length;i++){var p=_pTrack[i];if(p.t>ms)break;var z=_pzone(p.lat,p.lng);if(z===uz&&prev!==uz)n++;if(z)prev=z;}return n;}
+function _pDist(ms){var d=0;for(var i=1;i<_pTrack.length;i++){if(_pTrack[i].t>ms)break;d+=_phav(_pTrack[i-1].lat,_pTrack[i-1].lng,_pTrack[i].lat,_pTrack[i].lng);}return d;}
+function _pRender(){if(_pTrack.length===0)return;var p=_pPosAt(_pClock);_pMarker.setLatLng([p.lat,p.lng]);var pts=_pTrack.filter(function(x){return x.t<=_pClock;}).map(function(x){return [x.lat,x.lng];});pts.push([p.lat,p.lng]);_pTrail.setLatLngs(pts);document.getElementById('playScrub').value=Math.round((_pClock-_pT0)/((_pT1-_pT0)||1)*1000);document.getElementById('playClock').textContent=_pfmt(_pClock);var z=_pzone(p.lat,p.lng);document.getElementById('playInfo').textContent=_pVeh+' · '+_pfmt(_pClock)+' · '+p.spd+' km/h · '+(z?_PZ[z].n:'En route')+' · trips '+_pTrips(_pClock)+' · '+(_pDist(_pClock)/1000).toFixed(1)+' km';}
+function _pFrame(ts){if(_pPlaying){if(!_pLast)_pLast=ts;var dt=(ts-_pLast)/1000;_pLast=ts;var sp=+document.getElementById('playSpeed').value;_pClock+=dt*1000*sp;if(_pClock>=_pT1){_pClock=_pT1;_pPlaying=false;document.getElementById('playBtn').textContent='▶ Play';}_pRender();}else{_pLast=0;}_pRAF=requestAnimationFrame(_pFrame);}
+function playToggle(){if(_pTrack.length===0)return;_pPlaying=!_pPlaying;if(_pClock>=_pT1)_pClock=_pT0;document.getElementById('playBtn').textContent=_pPlaying?'⏸ Pause':'▶ Play';if(!_pRAF)_pRAF=requestAnimationFrame(_pFrame);}
+document.addEventListener('input',function(e){if(e.target&&e.target.id==='playScrub'){_pClock=_pT0+(e.target.value/1000)*(_pT1-_pT0);_pRender();}});
+
 var _gmap=null, _gLayer=null, _gTrailLayer=null, _gMarkers={}, _gTrails={}, _gTrailPolys={}, _gUserMoved=false, _gpsTimer=null;
 function gpsMapMsg(txt){ var el=document.getElementById('gpsMap'); if (el) el.innerHTML='<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:13px">'+txt+'</div>'; }
 function ensureGpsMap(){
