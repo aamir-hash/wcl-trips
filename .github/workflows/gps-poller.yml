@@ -1,0 +1,36 @@
+name: GPS Poller
+
+# Scheduler fires every 5 min; the script loops internally (every 60s) so
+# GpsLive / GpsHistory update roughly every minute. Also runnable on demand.
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gps-poller
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run poller loop
+        env:
+          GRAPH_TENANT: e9538cc7-6ab4-4ffd-a772-2eaa1fdaa2e2
+          GRAPH_CLIENT_ID: 0dbd91ec-1005-44b1-b0c9-6c36a7a3e13e
+          GRAPH_CLIENT_SECRET: ${{ secrets.GRAPH_CLIENT_SECRET }}
+          BLACKBUCK_FLEET_OWNER_ID: '7854267'
+          BLACKBUCK_TOKEN: ${{ secrets.BLACKBUCK_TOKEN }}
+          LOOP_ITERS: '5'
+        run: node gps-poller.js
