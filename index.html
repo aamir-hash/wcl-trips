@@ -454,7 +454,10 @@
     <div class="muted-note" id="gpsSrc">Independent BlackBuck GPS trip count beside supervisor-logged trips. Refreshes from GpsLive.</div>
     <button class="btn green sm" onclick="loadGps()">🔄 Refresh GPS / रिफ्रेश</button>
   </div>
-  <div class="card"><div id="gpsMap"></div></div>
+  <div class="card"><div style="margin:6px 0 2px"><span class="muted-note">Track vehicle / गाड़ी चुनें:</span></div>
+<div id="fleetChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px"></div>
+
+<div id="gpsMap"></div></div>
   <div class="card" style="overflow-x:auto"><div id="gpsTable"></div></div>
 </div>
 
@@ -765,7 +768,7 @@ function showTab(t){
   if (t==='Trips') renderTrips()
     if (t==='Play') loadPlay();
   if (_gpsTimer){ clearInterval(_gpsTimer); _gpsTimer=null; }
-  if (t==='GPS'){ _gUserMoved=false; loadGps(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
+  if (t==='GPS'){ _gUserMoved=false; loadGps(); buildFleetChips(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
   if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
@@ -1495,6 +1498,13 @@ function _pRender(){if(_pTrack.length===0)return;var p=_pPosAt(_pClock);_pMarker
 function _pFrame(ts){if(_pPlaying){if(!_pLast)_pLast=ts;var dt=(ts-_pLast)/1000;_pLast=ts;var sp=+document.getElementById('playSpeed').value;_pClock+=dt*1000*sp;if(_pClock>=_pT1){_pClock=_pT1;_pPlaying=false;document.getElementById('playBtn').textContent='▶ Play';}_pRender();}else{_pLast=0;}_pRAF=requestAnimationFrame(_pFrame);}
 function playToggle(){if(_pTrack.length===0)return;_pPlaying=!_pPlaying;if(_pClock>=_pT1)_pClock=_pT0;document.getElementById('playBtn').textContent=_pPlaying?'⏸ Pause':'▶ Play';if(!_pRAF)_pRAF=requestAnimationFrame(_pFrame);}
 document.addEventListener('input',function(e){if(e.target&&e.target.id==='playScrub'){_pClock=_pT0+(e.target.value/1000)*(_pT1-_pT0);_pRender();}});
+
+
+/* ---- Fleet vehicle-chip selector for GPS Live map ---- */
+function _chipStyle(sel){return 'padding:4px 9px;border-radius:16px;border:1px solid '+(sel?'#e11d48':'#cbd5e1')+';background:'+(sel?'#e11d48':'#fff')+';color:'+(sel?'#fff':'#0f172a')+';font-size:12px;font-weight:600;cursor:pointer;margin:0';}
+function _renderChips(){var box=document.getElementById('fleetChips');if(!box||!window._fleet)return;var vs=window._fleet;var sel=window._fleetSel||'__all';var html='<button onclick="focusFleet(\'__all\')" style="'+_chipStyle(sel==='__all')+'">All ('+vs.length+')</button>';html+=vs.map(function(x){return '<button onclick="focusFleet(\''+x.v+'\')" title="'+x.z+' · '+x.ig+'" style="'+_chipStyle(sel===x.v)+'">'+x.v+'</button>';}).join('');box.innerHTML=html;}
+async function buildFleetChips(){var box=document.getElementById('fleetChips');if(!box)return;if(!window._fleet)box.innerHTML='<span class="muted-note">Loading…</span>';var rows;try{rows=await graphGetAll('GpsLive');}catch(e){box.innerHTML='<span class="muted-note">Sign in (Settings) to load vehicles.</span>';return;}var vs=(rows||[]).map(function(it){var f=it.fields||it;return {v:f.Vehicle,la:+f.Latitude,lo:+f.Longitude,z:f.LastZone||'',ig:f.Ignition||''};}).filter(function(x){return x.v&&isFinite(x.la);});vs.sort(function(a,b){return String(a.v).localeCompare(String(b.v));});window._fleet=vs;window._fleetSel=window._fleetSel||'__all';_renderChips();}
+function focusFleet(v){window._fleetSel=v;if(typeof _gmap!=='undefined'&&_gmap){if(v==='__all'){var b=(window._fleet||[]).map(function(x){return [x.la,x.lo];});if(b.length){try{_gmap.fitBounds(L.latLngBounds(b).pad(0.2));}catch(e){}}if(window._fleetHi){_gmap.removeLayer(window._fleetHi);window._fleetHi=null;}}else{var x=(window._fleet||[]).find(function(y){return y.v===v;});if(x){_gmap.setView([x.la,x.lo],16);if(window._fleetHi)_gmap.removeLayer(window._fleetHi);window._fleetHi=L.circleMarker([x.la,x.lo],{radius:15,color:'#e11d48',weight:3,fill:false}).addTo(_gmap).bindTooltip(v+' · '+(x.z||''),{permanent:true,direction:'top'}).openTooltip();}}}_renderChips();}
 
 var _gmap=null, _gLayer=null, _gTrailLayer=null, _gMarkers={}, _gTrails={}, _gTrailPolys={}, _gUserMoved=false, _gpsTimer=null;
 function gpsMapMsg(txt){ var el=document.getElementById('gpsMap'); if (el) el.innerHTML='<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:13px">'+txt+'</div>'; }
