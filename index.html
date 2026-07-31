@@ -726,7 +726,7 @@ function boot(skipLock){
   if (!cfg.pinH){ showOnly('pgSetup'); return; }
   buildTabs();
   showOnly('pgSetup'); document.getElementById('pgSetup').classList.add('hidden');
-  document.getElementById('tabBar').style.display='flex';
+  document.getElementById('tabBar').style.display='flex'; maybeTrackStaff();
   document.getElementById('hdrTitle').textContent = DEMO ? '🎬 DEMO — all screens'
     : (cfg.role==='SUP' ? cfg.cp : cfg.role==='DSL' ? 'Diesel — '+cfg.point : cfg.role==='ACCT' ? 'Weighbridge Entry' : 'Admin Dashboard');
   document.getElementById('hdrSub').textContent = (DEMO?'Sample data · ':'') + cfg.name + ' — Mohd Aamir Transport';
@@ -768,7 +768,7 @@ function showTab(t){
   if (t==='Trips') renderTrips()
     if (t==='Play') loadPlay();
   if (_gpsTimer){ clearInterval(_gpsTimer); _gpsTimer=null; }
-  if (t==='GPS'){ _gUserMoved=false; loadGps(); buildFleetChips(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
+  if (t==='GPS'){ _gUserMoved=false; loadGps(); buildFleetChips(); renderStaffPins(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
   if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
@@ -1505,6 +1505,40 @@ function _chipStyle(sel){return 'padding:4px 9px;border-radius:16px;border:1px s
 function _renderChips(){var box=document.getElementById('fleetChips');if(!box||!window._fleet)return;var vs=window._fleet;var sel=window._fleetSel||'__all';var html='<button onclick="focusFleet(\'__all\')" style="'+_chipStyle(sel==='__all')+'">All ('+vs.length+')</button>';html+=vs.map(function(x){return '<button onclick="focusFleet(\''+x.v+'\')" title="'+x.z+' · '+x.ig+'" style="'+_chipStyle(sel===x.v)+'">'+x.v+'</button>';}).join('');box.innerHTML=html;}
 async function buildFleetChips(){var box=document.getElementById('fleetChips');if(!box)return;if(!window._fleet)box.innerHTML='<span class="muted-note">Loading…</span>';var rows;try{rows=await graphGetAll('GpsLive');}catch(e){box.innerHTML='<span class="muted-note">Sign in (Settings) to load vehicles.</span>';return;}var vs=(rows||[]).map(function(it){var f=it.fields||it;return {v:f.Vehicle,la:+f.Latitude,lo:+f.Longitude,z:f.LastZone||'',ig:f.Ignition||''};}).filter(function(x){return x.v&&isFinite(x.la);});vs.sort(function(a,b){return String(a.v).localeCompare(String(b.v));});window._fleet=vs;window._fleetSel=window._fleetSel||'__all';_renderChips();}
 function focusFleet(v){window._fleetSel=v;if(typeof _gmap!=='undefined'&&_gmap){if(v==='__all'){var b=(window._fleet||[]).map(function(x){return [x.la,x.lo];});if(b.length){try{_gmap.fitBounds(L.latLngBounds(b).pad(0.2));}catch(e){}}if(window._fleetHi){_gmap.removeLayer(window._fleetHi);window._fleetHi=null;}}else{var x=(window._fleet||[]).find(function(y){return y.v===v;});if(x){_gmap.setView([x.la,x.lo],16);if(window._fleetHi)_gmap.removeLayer(window._fleetHi);window._fleetHi=L.circleMarker([x.la,x.lo],{radius:15,color:'#e11d48',weight:3,fill:false}).addTo(_gmap).bindTooltip(v+' · '+(x.z||''),{permanent:true,direction:'top'}).openTooltip();}}}_renderChips();}
+
+
+/* ---- Field-staff live location (browser geolocation, while app is open) ---- */
+var _staffWatch=null,_staffTimer=null,_staffLayer=null;
+function _me(){ var c=get(LS.cfg)||{}; return {role:c.role||'',cp:c.cp||'',point:c.point||'',name:c.name||''}; }
+function _isField(r){ return r==='SUP'||r==='DSL'; }
+async function upsertStaffLoc(f){
+  var token=await getToken(); if(!token) return;
+  var key=(f.Person||'').replace(/'/g,"''"); var id=null;
+  try{ var r=await fetch(GRAPH+"StaffLocations/items?$expand=fields&$filter=fields/Person eq '"+key+"'&$top=1",{headers:{Authorization:'Bearer '+token,'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'}}); if(r.ok){ var j=await r.json(); if(j.value&&j.value[0]) id=j.value[0].id; } }catch(e){}
+  try{ if(id) await fetch(GRAPH+"StaffLocations/items/"+id+"/fields",{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(f)}); else await fetch(GRAPH+"StaffLocations/items",{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:f})}); }catch(e){}
+}
+function _sendStaffPos(pos){
+  var m=_me(); var person=(m.name||m.role)+(m.cp?(' @'+m.cp):'')+(m.point?(' ('+m.point+')'):'');
+  upsertStaffLoc({Title:person,Person:person,Role:m.role,Checkpoint:m.cp||m.point||'',Latitude:+pos.coords.latitude.toFixed(6),Longitude:+pos.coords.longitude.toFixed(6),Accuracy:Math.round(pos.coords.accuracy||0),LastUpdate:new Date().toISOString()});
+}
+function maybeTrackStaff(){
+  var m=_me(); if(!_isField(m.role)) return; if(!navigator.geolocation) return; if(_staffWatch!=null) return;
+  var opt={enableHighAccuracy:true,maximumAge:15000,timeout:20000};
+  function tick(){ try{ navigator.geolocation.getCurrentPosition(_sendStaffPos,function(){},opt); }catch(e){} }
+  tick(); _staffTimer=setInterval(tick,45000); _staffWatch=1;
+  var b=document.getElementById('hdrSub'); if(b && b.textContent.indexOf('sharing location')<0) b.textContent=b.textContent+' \u00b7 \ud83d\udccd sharing location';
+}
+async function renderStaffPins(){
+  if(typeof _gmap==='undefined'||!_gmap) return;
+  var rows; try{ rows=await graphGetAll('StaffLocations'); }catch(e){ return; }
+  if(!_staffLayer){ _staffLayer=L.layerGroup().addTo(_gmap); }
+  _staffLayer.clearLayers();
+  (rows||[]).forEach(function(f){ var la=+f.Latitude,lo=+f.Longitude; if(!isFinite(la)||!isFinite(lo)) return;
+    var age=f.LastUpdate?Math.round((Date.now()-Date.parse(f.LastUpdate))/60000):null; var fresh=(age!=null&&age<10);
+    var icon=L.divIcon({className:'',html:'<div style="background:'+(fresh?'#2563eb':'#94a3b8')+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.4)">\ud83d\udc77</div>',iconSize:[26,26],iconAnchor:[13,13]});
+    L.marker([la,lo],{icon:icon}).addTo(_staffLayer).bindPopup('<b>'+(f.Person||'Staff')+'</b><br>'+(f.Role||'')+(age!=null?('<br>'+age+' min ago'):'')+(fresh?'':'<br><i>stale</i>'));
+  });
+}
 
 var _gmap=null, _gLayer=null, _gTrailLayer=null, _gMarkers={}, _gTrails={}, _gTrailPolys={}, _gUserMoved=false, _gpsTimer=null;
 function gpsMapMsg(txt){ var el=document.getElementById('gpsMap'); if (el) el.innerHTML='<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:13px">'+txt+'</div>'; }
