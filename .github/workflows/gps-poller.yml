@@ -3,8 +3,9 @@ name: GPS Poller
 # Scheduler fires every 5 min; the script loops internally (every 60s) so
 # GpsLive / GpsHistory update roughly every minute. Also runnable on demand.
 on:
-  schedule:
-    - cron: '*/5 * * * *'
+  # schedule paused — BlackBuck blocks cloud/datacenter IPs (403). Re-enable once the official API key is in use.
+  # schedule:
+  #   - cron: '*/5 * * * *'
   workflow_dispatch:
 
 permissions:
