@@ -459,9 +459,10 @@
   <div class="card">
     <h3 style="margin-top:0">Settings / सेटिंग</h3>
     <div id="setInfo" style="font-size:14px; line-height:1.8"></div>
+    <button class="btn ghost" id="switchCpBtn" onclick="switchCheckpoint()" style="margin-bottom:8px">📍 Change my checkpoint (location) / जगह बदलें</button>
     <button class="btn ghost" onclick="editSetup()">Change role / setup बदलें</button>
     <button class="btn red" onclick="logout()" style="margin-top:8px">🚪 Logout / लॉग आउट</button>
-    <button class="btn red" onclick="clearOld()">🗑 Clear data older than 30 days / पुराना डेटा हटाएं</button>
+    <button class="btn red" id="clearOldBtn" onclick="clearOld()">🗑 Clear data older than 30 days / पुराना डेटा हटाएं</button>
   </div>
   <div class="card">
     <h3 style="margin-top:0">SharePoint Sync / शेयरपॉइंट सिंक</h3>
@@ -937,7 +938,7 @@ function logTripTable(trips, title, dot){
     h+='<tr><td class="l">'+t.veh+'</td>'
       +'<td>'+tfmt(t.srcIn)+'</td><td>'+tfmt(t.srcOut)+'</td><td>'+tfmt(t.dstIn)+'</td><td>'+tfmt(t.dstOut)+'</td>'
       +'<td'+(total?' style="font-weight:700;color:var(--blue)"':'')+'>'+durfmt(total)+'</td>'
-      +'<td><span class="del" data-ts="'+ts+'">✕</span></td></tr>';
+      +'<td>'+(canHardDelete()?('<span class="del" data-ts="'+ts+'">✕</span>'):'')+'</td></tr>';
   });
   return h+'</tbody></table>';
 }
@@ -971,6 +972,7 @@ function renderLog(){
   el.innerHTML = tripHtml + breakdownSection(day);
   Array.prototype.forEach.call(el.querySelectorAll('.del'), function(x){
     x.onclick=function(){
+      if (!canHardDelete()){ alert('⛔ Supervisors cannot delete entries.\nAsk the accountant/admin to correct a wrong trip.\nसुपरवाइज़र एंट्री नहीं हटा सकते।'); return; }
       if (!confirm('Delete this trip’s entries? / यह ट्रिप हटाएं?')) return;
       var kill={}; this.dataset.ts.split(',').forEach(function(v){ kill[v]=true; });
       logs=logs.filter(function(l){ return !kill[String(l.ts)]; });
@@ -978,6 +980,9 @@ function renderLog(){
     };
   });
 }
+// Supervisors CANNOT delete anything. Only Admin can hard-delete; the Accountant corrects
+// wrong/fake trips via the audited soft-delete in the Trips review tab (not a hard delete).
+function canHardDelete(){ return cfg.role==='ADM'; }
 function shareWhatsApp(){
   var tl=shiftLogs();
   if (!tl.length){ alert('No entries / कोई एंट्री नहीं'); return; }
@@ -2271,17 +2276,19 @@ function renderSet(){
     +(cfg.point?('<b>Fuel point:</b> '+cfg.point+'<br>'):'')
     +'<b>Trip entries:</b> '+logs.length+' · <b>Diesel:</b> '+diesel.length+' · <b>Weighbridge:</b> '+weighs.length;
   document.getElementById('setInfo').innerHTML=info;
+  var co=document.getElementById('clearOldBtn'); if (co) co.style.display=canHardDelete()?'block':'none';         // admin only
+  var sc=document.getElementById('switchCpBtn'); if (sc) sc.style.display=(cfg.role==='SUP')?'block':'none';       // supervisors only
   document.getElementById('vehCard').style.display=(cfg.role==='SUP'||cfg.role==='ADM'||DEMO)?'block':'none';
   refreshSyncUI();
   var vm=document.getElementById('vehManage'); if (!vm) return; vm.innerHTML='';
-  var canSwap=(cfg.role==='ADM'||DEMO);
+  var canSwap=(cfg.role==='ADM'||DEMO), canDel=canHardDelete()||DEMO;   // supervisors can't remove vehicles
   vehicles.forEach(function(v,i){
     var d=document.createElement('div'); d.className='logrow';
     d.innerHTML='<span style="font-weight:700">'+v.num+'</span><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+v.job+'</span>'
       +(v.status==='Stopped'?'<span class="pill" style="background:#fdecea;color:var(--red)">⛔</span>':'')
       +(canSwap?'<span class="pill" style="cursor:pointer;background:#e3f2fd;color:#1565c0" data-swap="'+i+'">⇄ switch job</span>':'')
-      +'<span class="del" data-i="'+i+'">✕</span>';
-    d.querySelector('.del').onclick=function(){ if (confirm('Remove '+v.num+' from the live list?\nIts past trips & records are kept. / पुराना डेटा सुरक्षित रहेगा।')){ vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); } };
+      +(canDel?'<span class="del" data-i="'+i+'">✕</span>':'');
+    var del=d.querySelector('.del'); if (del) del.onclick=function(){ if (confirm('Remove '+v.num+' from the live list?\nIts past trips & records are kept. / पुराना डेटा सुरक्षित रहेगा।')){ vehicles.splice(+this.dataset.i,1); set(LS.veh,vehicles); renderSet(); } };
     var sw=d.querySelector('[data-swap]'); if (sw) sw.onclick=function(){ switchVehJob(+this.dataset.swap); };
     vm.appendChild(d);
   });
@@ -2297,11 +2304,36 @@ function switchVehJob(i){
   if (!document.getElementById('pgMain').classList.contains('hidden')) renderMain();
 }
 function clearOld(){
+  if (!canHardDelete()){ alert('⛔ Only Admin can clear old data. Supervisors cannot delete. / केवल एडमिन पुराना डेटा हटा सकता है।'); return; }
+  if (!confirm('Delete ALL trip & diesel entries older than 30 days? This cannot be undone.')) return;
   var cut=Date.now()-30*24*3600*1000, before=logs.length+diesel.length;
   logs=logs.filter(function(l){ return l.ts>=cut; });
   diesel=diesel.filter(function(x){ return x.ts>=cut; });
   set(LS.log,logs); set(LS.dsl,diesel);
   alert((before-(logs.length+diesel.length))+' old entries removed');
+}
+// Location swap — a supervisor who physically moves to another checkpoint switches here (PIN-gated).
+// Only cfg.cp changes; identity/role/PIN stay. Past taps keep their original checkpoint; new taps
+// are logged at the new one. The move is recorded so the admin can see who moved where and when.
+function switchCheckpoint(){
+  if (cfg.role!=='SUP'){ alert('Only a supervisor changes checkpoint here.'); return; }
+  var p=prompt('Enter your PIN to change location / जगह बदलने के लिए पिन:');
+  if (p===null) return;
+  if (pinHash(p.trim())!==cfg.pinH){ alert('Wrong PIN / गलत पिन'); return; }
+  var opts=['Dhoptala','CHP','Siding'];
+  var choice=prompt('New checkpoint — type 1, 2 or 3:\n1 = Dhoptala (Job 1 loading)\n2 = CHP (Job 1 unload + Job 2 load)\n3 = Siding (Job 2 unload)\n\nCurrent: '+cfg.cp, String(opts.indexOf(cfg.cp)+1));
+  if (choice===null) return;
+  var idx=parseInt(choice,10)-1;
+  if (!(idx>=0&&idx<3)){ alert('Enter 1, 2 or 3'); return; }
+  var old=cfg.cp, newCp=opts[idx];
+  if (newCp===old) return;
+  cfg.cp=newCp; if (!DEMO) set(LS.cfg,cfg);
+  vstatus.push({ id:uid(), date:today(), ts:Date.now(), opDate:curOpDate(), veh:'—', status:'MOVE',
+    comment:'Supervisor '+cfg.name+' moved '+old+' → '+newCp, by:cfg.name, synced:false });
+  set('vt_vstatus', vstatus); if (!DEMO) syncNow(true);
+  document.getElementById('hdrTitle').textContent=cfg.cp;
+  renderSet(); renderMain();
+  alert('📍 Location changed to '+newCp+'.\nNew IN/OUT taps log here. Past taps keep their old checkpoint.');
 }
 // logout — clears the device's role/PIN and returns to the setup screen (data is kept)
 function logout(){
