@@ -2281,7 +2281,7 @@ function renderSet(){
   document.getElementById('vehCard').style.display=(cfg.role==='SUP'||cfg.role==='ADM'||DEMO)?'block':'none';
   refreshSyncUI();
   var vm=document.getElementById('vehManage'); if (!vm) return; vm.innerHTML='';
-  var canSwap=(cfg.role==='ADM'||DEMO), canDel=canHardDelete()||DEMO;   // supervisors can't remove vehicles
+  var canSwap=(cfg.role==='ADM'||(DEMO&&!SAMPLE)), canDel=canHardDelete()||(DEMO&&!SAMPLE);   // supervisors can't remove vehicles
   vehicles.forEach(function(v,i){
     var d=document.createElement('div'); d.className='logrow';
     d.innerHTML='<span style="font-weight:700">'+v.num+'</span><span class="tag '+(v.job==='Job 1'?'j1':'j2')+'">'+v.job+'</span>'
