@@ -512,6 +512,23 @@
   </div>
 </div>
 
+<div class="modal" id="cpModal">
+  <div class="sheet">
+    <h3>📍 Change my checkpoint / जगह बदलें</h3>
+    <label>Select new checkpoint / नया चेकपॉइंट चुनें</label>
+    <select id="cpNewSel">
+      <option value="Dhoptala">Dhoptala — Job 1 loading / धोपटाला लोडिंग</option>
+      <option value="CHP">CHP / SOCM (Sasti) — Job 1 unload + Job 2 load / सास्ती</option>
+      <option value="Siding">Ballarpur Rly Siding — Job 2 unload / रेलवे साइडिंग</option>
+    </select>
+    <label>Enter your PIN / अपना पिन डालें</label>
+    <input type="password" id="cpPin" inputmode="numeric" maxlength="6" placeholder="PIN">
+    <div id="cpErr" style="color:var(--red);font-size:13px;min-height:16px;margin-top:4px"></div>
+    <button class="btn" onclick="confirmSwitchCheckpoint()">Change location / बदलें</button>
+    <button class="btn ghost" onclick="document.getElementById('cpModal').classList.remove('show')">Cancel / रद्द करें</button>
+  </div>
+</div>
+
 <!-- ================= TABS ================= -->
 <div class="tabs" id="tabBar" style="display:none"></div>
 
@@ -825,7 +842,7 @@ function renderMain(){
       +'<div class="st">'+(stopped?'⛔ BREAKDOWN':(isIn?'INSIDE / अंदर':(le?'OUT / बाहर':'—')))+'</div>'
       +(stopped
         ? '<div class="stnote">'+(v.statusComment||'maintenance / breakdown')+(sinceTxt?('<br>'+sinceTxt):'')+'</div>'
-        : (le?'<div class="since">'+le.ev+' @ '+le.time+' ('+mins(le.ts)+')</div>':'<div class="since">No entry / कोई एंट्री नहीं</div>'))
+        : (le?'<div class="since">'+le.ev+' @ '+le.time+(le.sup?(' · '+String(le.sup).split(' ')[0]):'')+' ('+mins(le.ts)+')</div>':'<div class="since">No entry / कोई एंट्री नहीं</div>'))
       +'<div class="trips">'+tripsDay+' today</div>'
       +'<div class="shifttrips">'+tripsShift+' this shift</div>';
     d.onclick=function(){ openModal(v); };
@@ -858,7 +875,11 @@ function openModal(v){
   selVeh=v;
   document.getElementById('mVeh').textContent=v.num+'  ('+v.job+')';
   var le=lastEvent(v.num);
-  document.getElementById('mInfo').textContent=le?('Last: '+le.ev+' at '+le.time+' — '+mins(le.ts)+' ago'):'No entry today / आज कोई एंट्री नहीं';
+  var mInfo=document.getElementById('mInfo');
+  if (le){
+    mInfo.innerHTML='Last: <b>'+le.ev+'</b>'+(le.sup?(' by '+le.sup):'')+' at '+le.time+' — '+mins(le.ts)+' ago'
+      + ((le.sup && le.sup!==cfg.name)?'<br><span style="color:var(--red);font-weight:700">⚠ already logged by '+String(le.sup).split(' ')[0]+' — do not repeat</span>':'');
+  } else { mInfo.textContent='No entry today / आज कोई एंट्री नहीं'; }
   var bi=document.getElementById('btnIn'), bo=document.getElementById('btnOut');
   // contextual labels — is this checkpoint the loading (source) or unloading (destination) point for this job?
   var roles=cpRole(v.job), isSrc=cfg.cp===roles.src, isDst=cfg.cp===roles.dst;
@@ -1731,28 +1752,53 @@ async function postOrPatchWeighs(items){
   }
   return {ok:ok,fail:fail};
 }
+// stable identity for a tap, so the same event from any device de-dupes
+function tripKey(l){ return (l.veh||'')+'|'+(l.ev||'')+'|'+(l.cp||'')+'|'+(l.ts||''); }
+// INBOUND: pull every supervisor's taps from SharePoint and merge, so all devices show the SAME
+// live state (prevents two people logging the same IN/OUT). Returns how many new taps arrived.
+async function pullTrips(){
+  if (!(authConfigured() && signedInUser())) return 0;
+  var rows=await graphGetAll(LIST.trip); if (!rows) return 0;
+  var have={}; logs.forEach(function(l){ have[tripKey(l)]=true; });
+  var added=0;
+  rows.forEach(function(f){
+    var ts=f.Timestamp?Date.parse(f.Timestamp):null; if (!ts) return;
+    var e={ date:f.Title, time:f.EntryTime, ts:ts, opDate:f.OpDate, shift:f.Shift, cp:f.Checkpoint,
+      sup:f.Supervisor, veh:f.Vehicle, job:f.Job, route:f.Route, ev:f.Event,
+      cancelled:(f.Cancelled==='Yes'), synced:true };
+    var k=tripKey(e);
+    if (!have[k]){ have[k]=true; logs.push(e); added++; }
+  });
+  if (added) set(LS.log,logs);
+  return added;
+}
 async function syncNow(silent){
   if (!authConfigured()){ if(!silent) alert('Sync not configured'); return; }
   if (syncing) return; syncing=true;
+  var token=await getToken();
+  if (!token){ syncing=false; if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
+  var added=await pullTrips();          // pull others' taps first
   var pl=logs.filter(function(l){return !l.synced;});
   var pd=diesel.filter(function(x){return !x.synced;});
   var pq=qty.filter(function(q){return !q.synced;});
   var pw=weighs.filter(function(e){return !e.synced;});
   var pv=vstatus.filter(function(x){return !x.synced;});
-  if (!pl.length && !pd.length && !pq.length && !pw.length && !pv.length){ syncing=false; if(!silent) alert('All synced ✓'); return; }
-  var token=await getToken();
-  if (!token){ syncing=false; if(!silent) alert('Please sign in first / पहले साइन इन करें'); return; }
-  var r1=await postItems(LIST.trip, pl, tripFields);
-  var r2=await postItems(LIST.diesel, pd, dieselFields);
-  var r3=await postItems(LIST.qty, pq, qtyFields);
-  var r4=await postOrPatchWeighs(pw);
-  var r5=await postItems(LIST.vstatus, pv, vstatusFields);
+  var z={ok:0,fail:0}, r1=z,r2=z,r3=z,r4=z,r5=z;
+  if (pl.length) r1=await postItems(LIST.trip, pl, tripFields);
+  if (pd.length) r2=await postItems(LIST.diesel, pd, dieselFields);
+  if (pq.length) r3=await postItems(LIST.qty, pq, qtyFields);
+  if (pw.length) r4=await postOrPatchWeighs(pw);
+  if (pv.length) r5=await postItems(LIST.vstatus, pv, vstatusFields);
   set(LS.log,logs); set(LS.dsl,diesel); set(LS.qty,qty); set('vt_weighs',weighs); set('vt_vstatus',vstatus);
   syncing=false;
   var ok=r1.ok+r2.ok+r3.ok+r4.ok+r5.ok, fail=r1.fail+r2.fail+r3.fail+r4.fail+r5.fail;
-  if (!silent) alert(ok+' entries synced ✓'+(fail?(' · '+fail+' failed, will retry'):''));
+  if (!silent) alert((ok?ok+' entries synced ✓':'Up to date ✓')+(added?(' · '+added+' new from other supervisors'):'')+(fail?(' · '+fail+' failed, will retry'):''));
   refreshSyncUI();
-  if (cfg && (cfg.role==='ACCT'||DEMO) && !document.getElementById('pgWB').classList.contains('hidden')) renderWB();
+  if (added || ok){
+    if (cfg && cfg.role==='SUP' && !document.getElementById('pgMain').classList.contains('hidden')) renderMain();
+    if (cfg && !document.getElementById('pgLog').classList.contains('hidden')) renderLog();
+    if (cfg && (cfg.role==='ACCT'||DEMO) && !document.getElementById('pgWB').classList.contains('hidden')) renderWB();
+  }
 }
 function refreshSyncUI(){
   var user=signedInUser();
@@ -2317,15 +2363,15 @@ function clearOld(){
 // are logged at the new one. The move is recorded so the admin can see who moved where and when.
 function switchCheckpoint(){
   if (cfg.role!=='SUP'){ alert('Only a supervisor changes checkpoint here.'); return; }
-  var p=prompt('Enter your PIN to change location / जगह बदलने के लिए पिन:');
-  if (p===null) return;
-  if (pinHash(p.trim())!==cfg.pinH){ alert('Wrong PIN / गलत पिन'); return; }
-  var opts=['Dhoptala','CHP','Siding'];
-  var choice=prompt('New checkpoint — type 1, 2 or 3:\n1 = Dhoptala (Job 1 loading)\n2 = CHP (Job 1 unload + Job 2 load)\n3 = Siding (Job 2 unload)\n\nCurrent: '+cfg.cp, String(opts.indexOf(cfg.cp)+1));
-  if (choice===null) return;
-  var idx=parseInt(choice,10)-1;
-  if (!(idx>=0&&idx<3)){ alert('Enter 1, 2 or 3'); return; }
-  var old=cfg.cp, newCp=opts[idx];
+  document.getElementById('cpNewSel').value=cfg.cp||'Dhoptala';
+  document.getElementById('cpPin').value=''; document.getElementById('cpErr').textContent='';
+  document.getElementById('cpModal').classList.add('show');
+}
+function confirmSwitchCheckpoint(){
+  var p=document.getElementById('cpPin').value.trim();
+  if (pinHash(p)!==cfg.pinH){ document.getElementById('cpErr').textContent='Wrong PIN / गलत पिन'; return; }
+  var newCp=document.getElementById('cpNewSel').value, old=cfg.cp;
+  document.getElementById('cpModal').classList.remove('show');
   if (newCp===old) return;
   cfg.cp=newCp; if (!DEMO) set(LS.cfg,cfg);
   vstatus.push({ id:uid(), date:today(), ts:Date.now(), opDate:curOpDate(), veh:'—', status:'MOVE',
@@ -2347,6 +2393,14 @@ function logout(){
    TICKERS + START
    ========================================================= */
 setInterval(function(){ if (cfg && cfg.role==='SUP' && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
+// live shared state — every 20s pull other supervisors' taps so nobody double-logs a vehicle
+setInterval(function(){
+  if (cfg && cfg.role==='SUP' && signedInUser() && !syncing){
+    var onMain=!document.getElementById('pgMain').classList.contains('hidden');
+    var onLog=!document.getElementById('pgLog').classList.contains('hidden');
+    if (onMain||onLog) syncNow(true);
+  }
+}, 20000);
 // admin dashboard auto-refresh — pulls fresh SharePoint/workbook data on its own
 setInterval(function(){ if (cfg && cfg.role==='ADM' && !document.getElementById('pgDash').classList.contains('hidden')) loadDash(); }, (CONFIG.DASH_REFRESH_SEC||120)*1000);
 document.getElementById('pinIn').addEventListener('keyup', function(e){ if (e.key==='Enter') tryUnlock(); });
