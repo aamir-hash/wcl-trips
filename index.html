@@ -6,6 +6,9 @@
 <title>WCL Trip & Fuel Logger — Mohd Aamir Transport</title>
 <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.30.0/lib/msal-browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Firebase (independent shared live state for supervisors — no Microsoft login needed) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -539,6 +542,16 @@
 var CONFIG = {
   ORG:  'M/s Mohd Aamir Transport',
   AREA: 'WCL Ballarpur Area',
+  // Firebase = the independent shared live store for supervisor taps + vehicle status.
+  // Supervisors need NO Microsoft/SharePoint account — the app talks to Firebase directly.
+  // Paste your project's web config here (Firebase console → Project settings → Web app).
+  // Until real values are filled, the app runs local-only (Firebase stays off).
+  FIREBASE: {
+    apiKey:      'PASTE_API_KEY',
+    authDomain:  'PASTE_PROJECT.firebaseapp.com',
+    databaseURL: 'https://PASTE_PROJECT-default-rtdb.firebaseio.com',
+    projectId:   'PASTE_PROJECT'
+  },
   OP_START: '2026-07-08',      // date operations began (YYYY-MM-DD)
   ROUTE_START: { R1:'2026-07-08', R2:'2026-07-09' },  // per-route start dates (merged from manual edit)
   DAILY_TARGET_TE: 2700,       // per-route daily target in tonnes
@@ -914,9 +927,10 @@ function toggleVehStatus(){
   selVeh.statusComment = comment; selVeh.statusTs=Date.now();
   set(LS.veh, vehicles);
   var d=new Date();
-  vstatus.push({ id:uid(), date:today(), ts:d.getTime(), opDate:opDateOf(d), veh:selVeh.num,
-    status:selVeh.status, comment:comment, by:cfg.name, synced:false });
-  set('vt_vstatus', vstatus); syncNow(true);
+  var st={ id:uid(), date:today(), ts:d.getTime(), opDate:opDateOf(d), veh:selVeh.num,
+    status:selVeh.status, comment:comment, by:cfg.name, synced:false };
+  vstatus.push(st);
+  set('vt_vstatus', vstatus); writeStatusFB(st); syncNow(true);
   closeModal(); renderMain();
 }
 function logEvent(ev){
@@ -929,9 +943,10 @@ function logEvent(ev){
   }
   if (!confirm('Confirm entry? / एंट्री पक्की करें?\n\n'+selVeh.num+'\n'+ev+(ev==='IN'?' (अंदर)':' (बाहर)')+'\n'+nowT()+' — '+cfg.cp)) return;
   var d=new Date();
-  logs.push({ date:today(), time:nowT(), ts:d.getTime(), opDate:opDateOf(d), shift:shiftOf(d),
-    cp:cfg.cp, sup:cfg.name, veh:selVeh.num, job:selVeh.job, route:routeOfJob(selVeh.job), ev:ev, synced:false });
-  set(LS.log,logs); closeModal(); renderMain(); syncNow(true);
+  var evt={ date:today(), time:nowT(), ts:d.getTime(), opDate:opDateOf(d), shift:shiftOf(d),
+    cp:cfg.cp, sup:cfg.name, veh:selVeh.num, job:selVeh.job, route:routeOfJob(selVeh.job), ev:ev, synced:false };
+  logs.push(evt);
+  set(LS.log,logs); writeTripFB(evt); closeModal(); renderMain(); syncNow(true);
 }
 function durfmt(ms){ if (ms==null||isNaN(ms)) return '—'; var m=Math.round(ms/60000); return m<60 ? m+'m' : (Math.floor(m/60)+'h '+(m%60)+'m'); }
 // pair IN->OUT per vehicle into "visits" (one row = one visit to this checkpoint)
@@ -1474,7 +1489,7 @@ async function readGpsLive(){
 }
 // supervisor-logged completed trips per vehicle for an op-day (from tap data)
 async function loggedTripsByVeh(day){
-  var t=null; if (authConfigured() && signedInUser()) t=await graphGetAll(LIST.trip);
+  var t=null; if (!fbConfigured() && authConfigured() && signedInUser()) t=await graphGetAll(LIST.trip);  // Firebase = source of truth for taps when on
   var src=(t||logs).map(function(l){ return { opDate:l.opDate||l.OpDate, veh:l.veh||l.Vehicle, job:l.job||l.Job,
     cp:l.cp||l.Checkpoint, ev:l.ev||l.Event, ts:l.ts||(l.Timestamp?Date.parse(l.Timestamp):null), cancelled:(l.cancelled||l.Cancelled==='Yes') }; });
   var trips=reconstructTripsFrom(src, day);
@@ -1754,6 +1769,55 @@ async function postOrPatchWeighs(items){
 }
 // stable identity for a tap, so the same event from any device de-dupes
 function tripKey(l){ return (l.veh||'')+'|'+(l.ev||'')+'|'+(l.cp||'')+'|'+(l.ts||''); }
+
+/* =========================================================
+   FIREBASE — independent shared live state (NO login for supervisors).
+   Supervisor taps + vehicle status stream to every device in real time,
+   so two people can't log the same IN/OUT. Runs only if CONFIG.FIREBASE is filled.
+   ========================================================= */
+var fbDB=null, fbReady=false, _fbSeen={}, _fbRenderT=null;
+function fbConfigured(){ try{ return typeof firebase!=='undefined' && CONFIG.FIREBASE && CONFIG.FIREBASE.databaseURL && CONFIG.FIREBASE.databaseURL.indexOf('PASTE')<0; }catch(e){ return false; } }
+function fbKeyOf(e){ return String(tripKey(e)).replace(/[.#$\[\]\/]/g,'_'); }
+function sanitizeForFb(o){ var out={}; Object.keys(o).forEach(function(k){ var v=o[k]; if (v!==undefined) out[k]=(v===null?'':v); }); return out; }
+function fbScheduleRender(){ if (_fbRenderT) return; _fbRenderT=setTimeout(function(){ _fbRenderT=null;
+  if (!cfg) return;
+  if (cfg.role==='SUP' && !document.getElementById('pgMain').classList.contains('hidden')) renderMain();
+  if (!document.getElementById('pgLog').classList.contains('hidden')) renderLog();
+}, 350); }
+function initFirebase(){
+  if (fbReady || !fbConfigured()) return;
+  try{
+    firebase.initializeApp(CONFIG.FIREBASE);
+    fbDB=firebase.database();
+    fbReady=true;
+    fbDB.ref('trips').on('child_added',    function(s){ fbMergeTrip(s.val()); });
+    fbDB.ref('trips').on('child_changed',  function(s){ fbMergeTrip(s.val()); });
+    fbDB.ref('vstatus').on('child_added',  function(s){ fbMergeStatus(s.val()); });
+    fbDB.ref('vstatus').on('child_changed',function(s){ fbMergeStatus(s.val()); });
+    logs.forEach(function(l){ if (!l.fbSynced) writeTripFB(l); });          // push anything queued before init
+    vstatus.forEach(function(x){ if (!x.fbSynced) writeStatusFB(x); });
+  }catch(e){ console.log('Firebase init failed:', e && e.message); }
+}
+function writeTripFB(e){
+  if (!fbReady) return;
+  try{ fbDB.ref('trips/'+fbKeyOf(e)).set(sanitizeForFb(e)).then(function(){ e.fbSynced=true; set(LS.log,logs); }).catch(function(){}); }catch(err){}
+}
+function writeStatusFB(x){
+  if (!fbReady) return;
+  try{ fbDB.ref('vstatus/'+(x.id||fbKeyOf(x))).set(sanitizeForFb(x)).then(function(){ x.fbSynced=true; set('vt_vstatus',vstatus); }).catch(function(){}); }catch(err){}
+}
+function fbMergeTrip(e){
+  if (!e || !e.ts) return;
+  var k=tripKey(e); if (_fbSeen[k]) return; _fbSeen[k]=true;
+  if (!logs.some(function(l){ return tripKey(l)===k; })){ e.fbSynced=true; logs.push(e); set(LS.log,logs); fbScheduleRender(); }
+}
+function fbMergeStatus(x){
+  if (!x || !x.veh) return;
+  var v=vehicles.filter(function(vv){ return vv.num===x.veh; })[0];
+  if (v){ v.status=(x.status==='Stopped'?'Stopped':'Running'); v.statusComment=x.comment||''; v.statusTs=x.ts||Date.now(); set(LS.veh,vehicles); }
+  if (x.id && !vstatus.some(function(s){ return s.id===x.id; })){ x.fbSynced=true; vstatus.push(x); set('vt_vstatus',vstatus); }
+  fbScheduleRender();
+}
 // INBOUND: pull every supervisor's taps from SharePoint and merge, so all devices show the SAME
 // live state (prevents two people logging the same IN/OUT). Returns how many new taps arrived.
 async function pullTrips(){
@@ -1807,12 +1871,15 @@ function refreshSyncUI(){
           +qty.filter(function(q){return !q.synced;}).length
           +weighs.filter(function(e){return !e.synced;}).length
           +vstatus.filter(function(x){return !x.synced;}).length;
-  var msg=!authConfigured() ? '⚠️ Sync not configured — entries stay on phone only'
+  var fbLine = fbConfigured() ? ('<div style="color:var(--green);font-weight:600">🔥 Live shared sync: Firebase '+(fbReady?'connected ✓':'connecting…')+' (no login needed)</div>') : '';
+  var msg=!authConfigured() ? '⚠️ SharePoint sync not configured — entries stay on phone only'
     : (user ? ('👤 '+user+'<br>'+(pend?('⏳ <b>'+pend+'</b> entries pending'):'✅ All synced'))
-            : '⚠️ Not signed in — entries stay on phone until sign-in');
-  var s=document.getElementById('syncStat'); if (s) s.innerHTML=msg;
-  var b=document.getElementById('signInBtn'); if (b) b.style.display=user?'none':'block';
-  var ds=document.getElementById('dashSync'); if (ds) ds.innerHTML=msg;
+            : '⚠️ Not signed in to Microsoft — entries stay on phone until sign-in');
+  // supervisors use Firebase and need no Microsoft login; hide SharePoint prompts for them
+  var supFb = (cfg && cfg.role==='SUP' && fbConfigured());
+  var s=document.getElementById('syncStat'); if (s) s.innerHTML=fbLine+(supFb?'<div class="muted-note">Supervisor entries sync live via Firebase — no Microsoft sign-in required.</div>':msg);
+  var b=document.getElementById('signInBtn'); if (b) b.style.display=(supFb||user)?'none':'block';
+  var ds=document.getElementById('dashSync'); if (ds) ds.innerHTML=fbLine+msg;
   var db=document.getElementById('dashSignIn'); if (db) db.style.display=user?'none':'block';
 }
 setInterval(function(){ syncNow(true); }, 180000);
@@ -1880,6 +1947,8 @@ async function loadDash(){
     if (q===null) q=await graphGetAll(LIST.qty);
     if (t!==null || q!==null){
       DASH.trips = (t||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, veh:f.Vehicle, job:f.Job, route:f.Route, cp:f.Checkpoint, ev:f.Event, ts:(f.Timestamp?Date.parse(f.Timestamp):null), cancelled:(f.Cancelled==='Yes') }; });
+      // supervisor taps live in Firebase (not SharePoint) — use the Firebase-synced local logs for trips
+      if (fbConfigured()) DASH.trips = logs.filter(function(l){return !l.cancelled;}).map(function(l){ return { opDate:l.opDate, shift:l.shift, veh:l.veh, job:l.job, route:l.route, cp:l.cp, ev:l.ev, ts:l.ts, cancelled:!!l.cancelled }; });
       DASH.diesel = (d||[]).map(function(f){ return { opDate:f.OpDate, shift:f.Shift, assetType:f.AssetType, assetId:f.AssetId, litres:+f.Litres||0, hours:(f.RunHours!==''&&f.RunHours!=null)?+f.RunHours:null, km:(f.RunKm!==''&&f.RunKm!=null)?+f.RunKm:null, route:f.Route||'' }; });
       if (CONFIG.QTY_SOURCE==='WORKBOOK'){
         DASH.qty = buildQtyFromWorkbook(q);   // D WB tabs only, route from tab name
@@ -2483,7 +2552,7 @@ function loginSample(role, name, extra){
   boot(true);                                   // straight in (skip lock); PIN 1234 if they test the lock
 }
 if (DEMO){ seedDemo(); boot(true); }
-else { initAuth(); if (cfg) boot(); }
+else { initAuth(); initFirebase(); if (cfg) boot(); }
 </script>
 </body>
 </html>
