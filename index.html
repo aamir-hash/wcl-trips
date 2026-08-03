@@ -104,6 +104,7 @@
   .tag { font-size:10.5px; padding:1px 6px; border-radius:10px; }
   .tag.j1 { background:#e3f2fd; color:#1565c0; } .tag.j2 { background:#f3e5f5; color:#7b1fa2; }
   .muted-note { font-size:12px; color:var(--muted); margin:4px 0; }
+  .sampbtn { display:block; width:100%; text-align:left; margin-top:6px; font-size:13px; padding:10px 12px; }
   #gpsMap { height:360px; width:100%; border-radius:12px; z-index:0; background:#eef2f6; }
   /* WhatsApp-style live markers */
   .leaflet-marker-icon.vmark { transition: transform 1.1s linear; background:transparent!important; border:0!important; }
@@ -204,6 +205,16 @@
       <button class="btn" onclick="saveSetup()">Start / शुरू करें ▶</button>
     </div>
     <button class="btn ghost" style="margin-top:14px" onclick="startDemo()">🎬 View Demo with sample data</button>
+    <div style="margin-top:16px;border-top:1px solid #e7edf3;padding-top:12px">
+      <div class="muted-note" style="margin-bottom:6px">🔎 <b>Sample logins</b> — tap to preview each role's real screens &amp; access (demo data loaded · PIN <b>1234</b>):</div>
+      <button class="btn ghost sampbtn" onclick="loginSample('SUP','Yashpal (Dhoptala)','Dhoptala')">🚛 Supervisor · Dhoptala <span style="color:var(--muted)">— Job 1 loading only</span></button>
+      <button class="btn ghost sampbtn" onclick="loginSample('SUP','Imran (CHP)','CHP')">🚛 Supervisor · CHP <span style="color:var(--muted)">— Job 1 unload + Job 2 load</span></button>
+      <button class="btn ghost sampbtn" onclick="loginSample('SUP','Balaji (Siding)','Siding')">🚛 Supervisor · Siding <span style="color:var(--muted)">— Job 2 unload only</span></button>
+      <button class="btn ghost sampbtn" onclick="loginSample('DSL','Diesel Operator','Both')">⛽ Diesel Operator <span style="color:var(--muted)">— fuel entry only</span></button>
+      <button class="btn ghost sampbtn" onclick="loginSample('ACCT','Anita (Accounts)','')">🧾 Accountant <span style="color:var(--muted)">— weighbridge + trips</span></button>
+      <button class="btn ghost sampbtn" onclick="loginSample('ADM','Manager','')">📊 Admin <span style="color:var(--muted)">— dashboard + GPS + all</span></button>
+      <div class="muted-note" style="margin-top:6px">To leave a sample role: Settings ⚙️ → “Change setup” (PIN 1234).</div>
+    </div>
   </div>
 </div>
 
@@ -428,21 +439,6 @@
 </div>
 
 <!-- ================= ADMIN: GPS LIVE ================= -->
-<div class="wrap hidden" id="pgPlay">
-<div class="muted-note">Route Playback — pick a vehicle and date, then Play to watch it move along its recorded path (source: GpsHistory).</div>
-<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0">
-<select id="playVeh"></select>
-<input type="date" id="playDate">
-<button class="btn green sm" onclick="loadPlay()">Load</button>
-<button class="btn sm" id="playBtn" onclick="playToggle()">▶ Play</button>
-<span id="playClock" style="font-weight:700;min-width:52px;text-align:center">--:--</span>
-<select id="playSpeed"><option value="60">60×</option><option value="180" selected>180×</option><option value="480">480×</option><option value="1200">1200×</option></select>
-</div>
-<input type="range" id="playScrub" min="0" max="1000" value="0" style="width:100%">
-<div id="playInfo" class="muted-note" style="margin-top:6px">No data loaded.</div>
-<div id="playMap" style="height:60vh;min-height:340px;border-radius:10px;margin-top:8px"></div>
-</div>
-
 <div class="wrap hidden" id="pgGps">
   <div class="stat">
     <div class="box"><div class="n" id="gpsDevices">0</div><div class="l">GPS devices / जीपीएस</div></div>
@@ -454,10 +450,7 @@
     <div class="muted-note" id="gpsSrc">Independent BlackBuck GPS trip count beside supervisor-logged trips. Refreshes from GpsLive.</div>
     <button class="btn green sm" onclick="loadGps()">🔄 Refresh GPS / रिफ्रेश</button>
   </div>
-  <div class="card"><div style="margin:6px 0 2px"><span class="muted-note">Track vehicle / गाड़ी चुनें:</span></div>
-<div id="fleetChips" style="display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px"></div>
-
-<div id="gpsMap"></div></div>
+  <div class="card"><div id="gpsMap"></div></div>
   <div class="card" style="overflow-x:auto"><div id="gpsTable"></div></div>
 </div>
 
@@ -693,6 +686,7 @@ function saveSetup(){
   if (p1!==p2){ alert('PINs do not match / पिन मेल नहीं खाते'); return; }
   cfg={ role:r, name:name, cp:cp, point:point, pinH:pinHash(p1) };
   set(LS.cfg,cfg);
+  DEMO=false; SAMPLE=false;   // a real setup is never demo/sample
   boot(true);
 }
 function editSetup(){
@@ -704,7 +698,7 @@ function editSetup(){
   showOnly('pgSetup'); document.getElementById('tabBar').style.display='none';
 }
 function showOnly(id){
-  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgGps','pgPlay','pgDash','pgData','pgSet'].forEach(function(p){
+  ['pgSetup','pgMain','pgLog','pgDiesel','pgWB','pgTrips','pgGps','pgDash','pgData','pgSet'].forEach(function(p){
     var el=document.getElementById(p); if (el) el.classList.toggle('hidden', p!==id);
   });
 }
@@ -716,21 +710,24 @@ var TABS = {
   SUP: [ {id:'Main',ico:'🚛',t:'Vehicles'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   DSL: [ {id:'Diesel',ico:'⛽',t:'Diesel'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   ACCT:[ {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
-  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'GPS',ico:'📍',t:'GPS Live'},{id:'Play',ico:'▶',t:'Playback'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
+  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'GPS',ico:'📍',t:'GPS Live'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
 };
 // demo shows every screen in one device
 var DEMO_TABS = [ {id:'Main',ico:'🚛',t:'Job1/2'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Diesel',ico:'⛽',t:'Diesel'},
-  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'GPS',ico:'📍',t:'GPS'},{id:'Play',ico:'▶',t:'Playback'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
+  {id:'WB',ico:'🧾',t:'WB'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'GPS',ico:'📍',t:'GPS'}, {id:'Dash',ico:'📊',t:'Dash'}, {id:'Set',ico:'⚙️',t:'Set'} ];
+// SAMPLE = previewing one role's real tab set (with demo data loaded). Distinct from full DEMO (all tabs).
+var SAMPLE=false;
+function activeTabs(){ return (SAMPLE || !DEMO) ? TABS[cfg.role] : DEMO_TABS; }
 function boot(skipLock){
   if (!cfg) return;
   if (!cfg.pinH){ showOnly('pgSetup'); return; }
   buildTabs();
   showOnly('pgSetup'); document.getElementById('pgSetup').classList.add('hidden');
-  document.getElementById('tabBar').style.display='flex'; maybeTrackStaff();
-  document.getElementById('hdrTitle').textContent = DEMO ? '🎬 DEMO — all screens'
+  document.getElementById('tabBar').style.display='flex';
+  document.getElementById('hdrTitle').textContent = (DEMO && !SAMPLE) ? '🎬 DEMO — all screens'
     : (cfg.role==='SUP' ? cfg.cp : cfg.role==='DSL' ? 'Diesel — '+cfg.point : cfg.role==='ACCT' ? 'Weighbridge Entry' : 'Admin Dashboard');
-  document.getElementById('hdrSub').textContent = (DEMO?'Sample data · ':'') + cfg.name + ' — Mohd Aamir Transport';
-  var first = (DEMO?DEMO_TABS:TABS[cfg.role])[0].id;
+  document.getElementById('hdrSub').textContent = (SAMPLE?'🔎 Sample role · ':(DEMO?'Sample data · ':'')) + cfg.name + ' — Mohd Aamir Transport';
+  var first = activeTabs()[0].id;
   showTab(first);
   if (!skipLock){
     document.getElementById('pinWho').textContent = cfg.name + ' — ' + (cfg.cp||cfg.point||cfg.role);
@@ -739,7 +736,7 @@ function boot(skipLock){
 }
 function buildTabs(){
   var bar=document.getElementById('tabBar'); bar.innerHTML='';
-  (DEMO?DEMO_TABS:TABS[cfg.role]).forEach(function(tb){
+  activeTabs().forEach(function(tb){
     var d=document.createElement('div'); d.className='tab'; d.id='tab'+tb.id;
     d.innerHTML='<span class="ico">'+tb.ico+'</span>'+tb.t;
     d.onclick=function(){ showTab(tb.id); };
@@ -757,7 +754,7 @@ function tryUnlock(){
   }
 }
 function showTab(t){
-  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', GPS:'pgGps',Play:'pgPlay', Set:'pgSet' };
+  var pageMap={ Main:'pgMain', Log:'pgLog', Diesel:'pgDiesel', Dash:'pgDash', Data:'pgData', WB:'pgWB', Trips:'pgTrips', GPS:'pgGps', Set:'pgSet' };
   showOnly(pageMap[t]);
   document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('act'); });
   var at=document.getElementById('tab'+t); if (at) at.classList.add('act');
@@ -765,10 +762,9 @@ function showTab(t){
   if (t==='Log') renderLog();
   if (t==='Diesel') renderDiesel();
   if (t==='WB') renderWB();
-  if (t==='Trips') renderTrips()
-    if (t==='Play') loadPlay();
+  if (t==='Trips') renderTrips();
   if (_gpsTimer){ clearInterval(_gpsTimer); _gpsTimer=null; }
-  if (t==='GPS'){ _gUserMoved=false; loadGps(); buildFleetChips(); renderStaffPins(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
+  if (t==='GPS'){ _gUserMoved=false; loadGps(); _gpsTimer=setInterval(function(){ if(!document.getElementById('pgGps').classList.contains('hidden')) loadGps(); else { clearInterval(_gpsTimer); _gpsTimer=null; } }, 15000); }
   if (t==='Dash'){ setToday(); loadDash(); }
   if (t==='Set') renderSet();
 }
@@ -802,14 +798,19 @@ function setDemoCp(){
 }
 var mainJob='Job 1';
 function setMainJob(j){ mainJob=j; renderMain(); }
+// which jobs pass through this checkpoint: Dhoptala=Job1 only, CHP=Job1(unload)+Job2(load), Siding=Job2 only
+function cpJobs(cp){ var out=[]; ['Job 1','Job 2'].forEach(function(j){ var r=cpRole(j); if (cp===r.src||cp===r.dst) out.push(j); }); return out.length?out:['Job 1','Job 2']; }
 function renderMain(){
   var bar=document.getElementById('demoCpBar');
   if (bar){ bar.classList.toggle('hidden', !DEMO); if (DEMO) document.getElementById('demoCp').value=cfg.cp; }
+  var served=cpJobs(cfg.cp);                       // only vehicles whose route uses THIS checkpoint
+  if (mainJob!=='all' && served.indexOf(mainJob)<0) mainJob=(served.length===1?served[0]:'all');
   var g1=document.getElementById('vehGrid1'), g2=document.getElementById('vehGrid2');
   g1.innerHTML=''; g2.innerHTML='';
   var inCount=0, od=curOpDate(), sh=curShift();
   var cnt={ 'Job 1':{run:0,stop:0}, 'Job 2':{run:0,stop:0} };
   vehicles.forEach(function(v){
+    if (served.indexOf(v.job)<0) return;           // hide trucks that don't come to this checkpoint
     var le=lastEvent(v.num), isIn=le&&le.ev==='IN';
     var stopped=v.status==='Stopped';
     if (isIn && !stopped) inCount++;
@@ -832,12 +833,22 @@ function renderMain(){
   function statTxt(c){ return '🟢 '+c.run+' running'+(c.stop?(' · ⛔ '+c.stop+' down'):''); }
   var j1s=document.getElementById('job1Stat'), j2s=document.getElementById('job2Stat');
   if (j1s) j1s.innerHTML=statTxt(cnt['Job 1']); if (j2s) j2s.innerHTML=statTxt(cnt['Job 2']);
-  // Job filter — show only the selected job's vehicles
-  var sj1=(mainJob==='all'||mainJob==='Job 1'), sj2=(mainJob==='all'||mainJob==='Job 2');
+  // Job filter — limited to jobs this checkpoint actually serves
+  var sj1=served.indexOf('Job 1')>=0 && (mainJob==='all'||mainJob==='Job 1');
+  var sj2=served.indexOf('Job 2')>=0 && (mainJob==='all'||mainJob==='Job 2');
   document.getElementById('job1Sec').classList.toggle('hidden', !sj1);
   document.getElementById('job2Sec').classList.toggle('hidden', !sj2);
   var mb=document.getElementById('mainJobBar');
-  if (mb) Array.prototype.forEach.call(mb.querySelectorAll('button'), function(b){ b.classList.toggle('on', b.dataset.j===mainJob); });
+  if (mb){
+    var single=served.length===1;
+    Array.prototype.forEach.call(mb.querySelectorAll('button'), function(b){
+      var j=b.dataset.j;
+      var show = (j==='all') ? !single : (served.indexOf(j)>=0);   // hide toggles for unserved jobs; hide "Both" when only one
+      b.classList.toggle('hidden', !show);
+      b.classList.toggle('on', j===mainJob);
+    });
+    mb.classList.toggle('hidden', single);   // no toggle bar when checkpoint serves just one job
+  }
   document.getElementById('stIn').textContent=inCount;
   document.getElementById('stTrips').textContent=shiftLogs().length;
   document.getElementById('stShift').textContent=sh;
@@ -1479,67 +1490,6 @@ async function loadGps(){
         : '⚠️ Sign in (Settings) to load GPS.');
   renderGps();
 }
-
-/* ---- Route Playback (historic GpsHistory animation) ---- */
-var _pmap=null,_pLayer=null,_pTrack=[],_pVeh='',_pPlaying=false,_pClock=0,_pT0=0,_pT1=0,_pRAF=0,_pLast=0,_pMarker=null,_pTrail=null;
-var _PZ={DHOPTALA:{lat:19.8122116,lng:79.3370179,r:350,n:'Dhoptala'},SASTI_CHP:{lat:19.8112580,lng:79.3041404,r:350,n:'Sasti CHP'},BALLARPUR:{lat:19.8383790,lng:79.3484910,r:350,n:'Ballarpur'}};
-var _PUN={'Job 1':'SASTI_CHP','Job 2':'BALLARPUR'};
-function _phav(a,b,c,d){var R=6371000,r=function(x){return x*Math.PI/180;};var dLat=r(c-a),dLng=r(d-b);var s=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLng/2)*Math.sin(dLng/2);return 2*R*Math.asin(Math.sqrt(s));}
-function _pzone(la,ln){for(var k in _PZ){if(_phav(la,ln,_PZ[k].lat,_PZ[k].lng)<=_PZ[k].r)return k;}return null;}
-function _pist(ms){return new Date(ms).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'});}
-function _pfmt(ms){return new Date(ms).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});}
-function _pEnsureMap(){if(_pmap)return;_pmap=L.map('playMap').setView([19.821,79.322],13);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(_pmap);for(var k in _PZ){var z=_PZ[k];L.circle([z.lat,z.lng],{radius:z.r,color:'#8b5cf6',weight:1,fillOpacity:.08}).addTo(_pmap).bindTooltip(z.n);}_pLayer=L.layerGroup().addTo(_pmap);}
-async function _pVehList(){try{var dm=await graphGetAll('DeviceMap');var vs=(dm||[]).map(function(it){var f=it.fields||it;return f.Vehicle;}).filter(function(v){return v;});return Array.from(new Set(vs)).sort();}catch(e){return [];}}
-async function loadPlay(){_pEnsureMap();setTimeout(function(){if(_pmap)_pmap.invalidateSize();},80);var sel=document.getElementById('playVeh');var dt=document.getElementById('playDate');if(!dt.value)dt.value=new Date().toLocaleDateString('en-CA');if(sel.options.length===0){var vs=await _pVehList();sel.innerHTML=vs.map(function(v){return '<option>'+v+'</option>';}).join('');}var veh=sel.value;var day=dt.value;document.getElementById('playInfo').textContent='Loading…';var rows;try{rows=await graphGetAll('GpsHistory');}catch(e){document.getElementById('playInfo').textContent='Could not read GpsHistory (sign in via Settings).';return;}var track=(rows||[]).map(function(it){var f=it.fields||it;return {veh:f.Vehicle,job:f.Job,t:Date.parse(f.Ts),lat:+f.Latitude,lng:+f.Longitude,spd:+f.Speed||0};}).filter(function(p){return p.veh===veh&&isFinite(p.t)&&_pist(p.t)===day;}).sort(function(a,b){return a.t-b.t;});_pTrack=track;_pVeh=veh;if(_pLayer)_pLayer.clearLayers();if(track.length===0){document.getElementById('playInfo').textContent='No GPS history for '+veh+' on '+day+'. The poller fills this list every minute once deployed.';document.getElementById('playClock').textContent='--:--';return;}_pT0=track[0].t;_pT1=track[track.length-1].t;_pClock=_pT0;var latlngs=track.map(function(p){return [p.lat,p.lng];});_pTrail=L.polyline([],{color:'#f59e0b',weight:3}).addTo(_pLayer);_pMarker=L.marker([track[0].lat,track[0].lng]).addTo(_pLayer);_pmap.fitBounds(L.latLngBounds(latlngs).pad(0.2));_pRender();}
-function _pPosAt(ms){var tr=_pTrack;if(ms<=tr[0].t)return tr[0];for(var i=1;i<tr.length;i++){if(ms<=tr[i].t){var a=tr[i-1],b=tr[i],f=(ms-a.t)/((b.t-a.t)||1);return {lat:a.lat+(b.lat-a.lat)*f,lng:a.lng+(b.lng-a.lng)*f,spd:Math.round(a.spd+(b.spd-a.spd)*f)};}}return tr[tr.length-1];}
-function _pTrips(ms){var uz=_PUN[_pTrack[0]&&_pTrack[0].job];if(!uz)return 0;var n=0,prev=null;for(var i=0;i<_pTrack.length;i++){var p=_pTrack[i];if(p.t>ms)break;var z=_pzone(p.lat,p.lng);if(z===uz&&prev!==uz)n++;if(z)prev=z;}return n;}
-function _pDist(ms){var d=0;for(var i=1;i<_pTrack.length;i++){if(_pTrack[i].t>ms)break;d+=_phav(_pTrack[i-1].lat,_pTrack[i-1].lng,_pTrack[i].lat,_pTrack[i].lng);}return d;}
-function _pRender(){if(_pTrack.length===0)return;var p=_pPosAt(_pClock);_pMarker.setLatLng([p.lat,p.lng]);var pts=_pTrack.filter(function(x){return x.t<=_pClock;}).map(function(x){return [x.lat,x.lng];});pts.push([p.lat,p.lng]);_pTrail.setLatLngs(pts);document.getElementById('playScrub').value=Math.round((_pClock-_pT0)/((_pT1-_pT0)||1)*1000);document.getElementById('playClock').textContent=_pfmt(_pClock);var z=_pzone(p.lat,p.lng);document.getElementById('playInfo').textContent=_pVeh+' · '+_pfmt(_pClock)+' · '+p.spd+' km/h · '+(z?_PZ[z].n:'En route')+' · trips '+_pTrips(_pClock)+' · '+(_pDist(_pClock)/1000).toFixed(1)+' km';}
-function _pFrame(ts){if(_pPlaying){if(!_pLast)_pLast=ts;var dt=(ts-_pLast)/1000;_pLast=ts;var sp=+document.getElementById('playSpeed').value;_pClock+=dt*1000*sp;if(_pClock>=_pT1){_pClock=_pT1;_pPlaying=false;document.getElementById('playBtn').textContent='▶ Play';}_pRender();}else{_pLast=0;}_pRAF=requestAnimationFrame(_pFrame);}
-function playToggle(){if(_pTrack.length===0)return;_pPlaying=!_pPlaying;if(_pClock>=_pT1)_pClock=_pT0;document.getElementById('playBtn').textContent=_pPlaying?'⏸ Pause':'▶ Play';if(!_pRAF)_pRAF=requestAnimationFrame(_pFrame);}
-document.addEventListener('input',function(e){if(e.target&&e.target.id==='playScrub'){_pClock=_pT0+(e.target.value/1000)*(_pT1-_pT0);_pRender();}});
-
-
-/* ---- Fleet vehicle-chip selector for GPS Live map ---- */
-function _chipStyle(sel){return 'padding:4px 9px;border-radius:16px;border:1px solid '+(sel?'#e11d48':'#cbd5e1')+';background:'+(sel?'#e11d48':'#fff')+';color:'+(sel?'#fff':'#0f172a')+';font-size:12px;font-weight:600;cursor:pointer;margin:0';}
-function _renderChips(){var box=document.getElementById('fleetChips');if(!box||!window._fleet)return;var vs=window._fleet;var sel=window._fleetSel||'__all';var html='<button onclick="focusFleet(\'__all\')" style="'+_chipStyle(sel==='__all')+'">All ('+vs.length+')</button>';html+=vs.map(function(x){return '<button onclick="focusFleet(\''+x.v+'\')" title="'+x.z+' · '+x.ig+'" style="'+_chipStyle(sel===x.v)+'">'+x.v+'</button>';}).join('');box.innerHTML=html;}
-async function buildFleetChips(){var box=document.getElementById('fleetChips');if(!box)return;if(!window._fleet)box.innerHTML='<span class="muted-note">Loading…</span>';var rows;try{rows=await graphGetAll('GpsLive');}catch(e){box.innerHTML='<span class="muted-note">Sign in (Settings) to load vehicles.</span>';return;}var vs=(rows||[]).map(function(it){var f=it.fields||it;return {v:f.Vehicle,la:+f.Latitude,lo:+f.Longitude,z:f.LastZone||'',ig:f.Ignition||''};}).filter(function(x){return x.v&&isFinite(x.la);});vs.sort(function(a,b){return String(a.v).localeCompare(String(b.v));});window._fleet=vs;window._fleetSel=window._fleetSel||'__all';_renderChips();}
-function focusFleet(v){window._fleetSel=v;if(typeof _gmap!=='undefined'&&_gmap){if(v==='__all'){var b=(window._fleet||[]).map(function(x){return [x.la,x.lo];});if(b.length){try{_gmap.fitBounds(L.latLngBounds(b).pad(0.2));}catch(e){}}if(window._fleetHi){_gmap.removeLayer(window._fleetHi);window._fleetHi=null;}}else{var x=(window._fleet||[]).find(function(y){return y.v===v;});if(x){_gmap.setView([x.la,x.lo],16);if(window._fleetHi)_gmap.removeLayer(window._fleetHi);window._fleetHi=L.circleMarker([x.la,x.lo],{radius:15,color:'#e11d48',weight:3,fill:false}).addTo(_gmap).bindTooltip(v+' · '+(x.z||''),{permanent:true,direction:'top'}).openTooltip();}}}_renderChips();}
-
-
-/* ---- Field-staff live location (browser geolocation, while app is open) ---- */
-var _staffWatch=null,_staffTimer=null,_staffLayer=null;
-function _me(){ var c=get(LS.cfg)||{}; return {role:c.role||'',cp:c.cp||'',point:c.point||'',name:c.name||''}; }
-function _isField(r){ return r==='SUP'||r==='DSL'; }
-async function upsertStaffLoc(f){
-  var token=await getToken(); if(!token) return;
-  var key=(f.Person||'').replace(/'/g,"''"); var id=null;
-  try{ var r=await fetch(GRAPH+"StaffLocations/items?$expand=fields&$filter=fields/Person eq '"+key+"'&$top=1",{headers:{Authorization:'Bearer '+token,'Prefer':'HonorNonIndexedQueriesWarningMayFailRandomly'}}); if(r.ok){ var j=await r.json(); if(j.value&&j.value[0]) id=j.value[0].id; } }catch(e){}
-  try{ if(id) await fetch(GRAPH+"StaffLocations/items/"+id+"/fields",{method:'PATCH',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(f)}); else await fetch(GRAPH+"StaffLocations/items",{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({fields:f})}); }catch(e){}
-}
-function _sendStaffPos(pos){
-  var m=_me(); var person=(m.name||m.role)+(m.cp?(' @'+m.cp):'')+(m.point?(' ('+m.point+')'):'');
-  upsertStaffLoc({Title:person,Person:person,Role:m.role,Checkpoint:m.cp||m.point||'',Latitude:+pos.coords.latitude.toFixed(6),Longitude:+pos.coords.longitude.toFixed(6),Accuracy:Math.round(pos.coords.accuracy||0),LastUpdate:new Date().toISOString()});
-}
-function maybeTrackStaff(){
-  var m=_me(); if(!_isField(m.role)) return; if(!navigator.geolocation) return; if(_staffWatch!=null) return;
-  var opt={enableHighAccuracy:true,maximumAge:15000,timeout:20000};
-  function tick(){ try{ navigator.geolocation.getCurrentPosition(_sendStaffPos,function(){},opt); }catch(e){} }
-  tick(); _staffTimer=setInterval(tick,45000); _staffWatch=1;
-  var b=document.getElementById('hdrSub'); if(b && b.textContent.indexOf('sharing location')<0) b.textContent=b.textContent+' \u00b7 \ud83d\udccd sharing location';
-}
-async function renderStaffPins(){
-  if(typeof _gmap==='undefined'||!_gmap) return;
-  var rows; try{ rows=await graphGetAll('StaffLocations'); }catch(e){ return; }
-  if(!_staffLayer){ _staffLayer=L.layerGroup().addTo(_gmap); }
-  _staffLayer.clearLayers();
-  (rows||[]).forEach(function(f){ var la=+f.Latitude,lo=+f.Longitude; if(!isFinite(la)||!isFinite(lo)) return;
-    var age=f.LastUpdate?Math.round((Date.now()-Date.parse(f.LastUpdate))/60000):null; var fresh=(age!=null&&age<10);
-    var icon=L.divIcon({className:'',html:'<div style="background:'+(fresh?'#2563eb':'#94a3b8')+';color:#fff;border:2px solid #fff;border-radius:50%;width:26px;height:26px;line-height:22px;text-align:center;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.4)">\ud83d\udc77</div>',iconSize:[26,26],iconAnchor:[13,13]});
-    L.marker([la,lo],{icon:icon}).addTo(_staffLayer).bindPopup('<b>'+(f.Person||'Staff')+'</b><br>'+(f.Role||'')+(age!=null?('<br>'+age+' min ago'):'')+(fresh?'':'<br><i>stale</i>'));
-  });
-}
-
 var _gmap=null, _gLayer=null, _gTrailLayer=null, _gMarkers={}, _gTrails={}, _gTrailPolys={}, _gUserMoved=false, _gpsTimer=null;
 function gpsMapMsg(txt){ var el=document.getElementById('gpsMap'); if (el) el.innerHTML='<div style="display:flex;height:100%;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:16px;font-size:13px">'+txt+'</div>'; }
 function ensureGpsMap(){
@@ -2437,7 +2387,15 @@ function seedDemo(){
   _down(j2[6],'Engine overheating — maintenance',5);
 }
 
-function startDemo(){ DEMO=true; seedDemo(); boot(true); }
+function startDemo(){ DEMO=true; SAMPLE=false; seedDemo(); boot(true); }
+// Preview one role's real screens/tabs with demo data loaded. PIN for these sample users = 1234.
+function loginSample(role, name, extra){
+  DEMO=true; seedDemo();                        // load sample data (seedDemo also sets cfg=ADM)
+  SAMPLE=true;
+  cfg={ role:role, name:name, cp:(role==='SUP'?extra:''), point:(role==='DSL'?extra:''), pinH:pinHash('1234') };
+  if (role==='SUP') mainJob='all';
+  boot(true);                                   // straight in (skip lock); PIN 1234 if they test the lock
+}
 if (DEMO){ seedDemo(); boot(true); }
 else { initAuth(); if (cfg) boot(); }
 </script>
