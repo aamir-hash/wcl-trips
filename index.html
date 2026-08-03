@@ -135,8 +135,8 @@
   <div class="sub" id="hdrSub">M/s Mohd Aamir Transport — WCL Ballarpur Area</div>
 </div>
 
-<!-- ================= SETUP ================= -->
-<div class="wrap" id="pgSetup">
+<!-- ================= SETUP (new users only) ================= -->
+<div class="wrap hidden" id="pgSetup">
   <div class="card">
     <h3 style="margin-top:0">Setup / सेटअप</h3>
     <label>Select your role / अपनी भूमिका चुनें</label>
@@ -224,19 +224,20 @@
 <!-- ================= PIN LOCK ================= -->
 <div class="modal" id="pinLock" style="align-items:center;background:var(--blue)">
   <div class="sheet" style="border-radius:18px;max-width:340px;text-align:center">
-    <h3>🔒 Enter PIN / पिन डालें</h3>
+    <h3>🔑 Login / लॉगिन</h3>
     <div class="subt" id="pinWho"></div>
+    <div class="muted-note" style="margin:2px 0 8px">Enter your PIN to continue / जारी रखने के लिए पिन डालें</div>
     <input type="password" id="pinIn" inputmode="numeric" maxlength="6"
       style="width:100%;padding:14px;font-size:26px;text-align:center;letter-spacing:10px;border:1.5px solid #cfd8e3;border-radius:10px">
     <div id="pinErr" style="color:var(--red);font-size:13px;margin-top:6px;min-height:18px"></div>
-    <button class="btn" onclick="tryUnlock()">Unlock / खोलें</button>
+    <button class="btn" onclick="tryUnlock()">Login / लॉगिन</button>
   </div>
 </div>
 
 <!-- ================= SUPERVISOR: VEHICLES ================= -->
 <div class="wrap hidden" id="pgMain">
   <div id="demoCpBar" class="card hidden" style="padding:10px;background:#fff8e1;border:1px solid #ffe0a3">
-    <label style="margin:0 0 4px">🎬 Demo — simulate which checkpoint you are at</label>
+    <label style="margin:0 0 4px" id="demoCpLabel">🎬 Demo — simulate which checkpoint you are at</label>
     <select id="demoCp" onchange="setDemoCp()">
       <option value="Dhoptala">Dhoptala — Job 1 SOURCE (loading)</option>
       <option value="CHP">CHP — Job 1 destination + Job 2 SOURCE</option>
@@ -741,7 +742,7 @@ var TABS = {
   SUP: [ {id:'Main',ico:'🚛',t:'Vehicles'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   DSL: [ {id:'Diesel',ico:'⛽',t:'Diesel'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
   ACCT:[ {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ],
-  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'GPS',ico:'📍',t:'GPS Live'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
+  ADM: [ {id:'Dash',ico:'📊',t:'Dashboard'}, {id:'Main',ico:'🚛',t:'IN/OUT'}, {id:'Log',ico:'📋',t:'Log'}, {id:'GPS',ico:'📍',t:'GPS Live'}, {id:'WB',ico:'🧾',t:'Weighbridge'}, {id:'Trips',ico:'🚦',t:'Trips'}, {id:'Set',ico:'⚙️',t:'Settings'} ]
 };
 // demo shows every screen in one device
 var DEMO_TABS = [ {id:'Main',ico:'🚛',t:'Job1/2'}, {id:'Log',ico:'📋',t:'Log'}, {id:'Diesel',ico:'⛽',t:'Diesel'},
@@ -824,7 +825,8 @@ function mins(ts){ var m=Math.round((Date.now()-ts)/60000); return m<60?m+' min'
 
 function setDemoCp(){
   cfg.cp=document.getElementById('demoCp').value;
-  document.getElementById('hdrTitle').textContent='🎬 DEMO — '+cfg.cp;
+  if (!DEMO) set(LS.cfg,cfg);   // admin working-checkpoint choice persists
+  document.getElementById('hdrTitle').textContent=(DEMO?'🎬 DEMO — ':'')+cfg.cp;
   renderMain();
 }
 var mainJob='Job 1';
@@ -832,8 +834,12 @@ function setMainJob(j){ mainJob=j; renderMain(); }
 // which jobs pass through this checkpoint: Dhoptala=Job1 only, CHP=Job1(unload)+Job2(load), Siding=Job2 only
 function cpJobs(cp){ var out=[]; ['Job 1','Job 2'].forEach(function(j){ var r=cpRole(j); if (cp===r.src||cp===r.dst) out.push(j); }); return out.length?out:['Job 1','Job 2']; }
 function renderMain(){
+  // admins aren't location-locked: give them a checkpoint picker and let them log anywhere
+  var adminPick=(cfg.role==='ADM' && !DEMO);
+  if (adminPick && (!cfg.cp || ['Dhoptala','CHP','Siding'].indexOf(cfg.cp)<0)) cfg.cp='CHP';
   var bar=document.getElementById('demoCpBar');
-  if (bar){ bar.classList.toggle('hidden', !DEMO); if (DEMO) document.getElementById('demoCp').value=cfg.cp; }
+  if (bar){ bar.classList.toggle('hidden', !(DEMO||adminPick)); if (DEMO||adminPick) document.getElementById('demoCp').value=cfg.cp;
+    var lbl=document.getElementById('demoCpLabel'); if (lbl) lbl.textContent=adminPick?'📍 Admin — choose the checkpoint you are logging at (any location)':'🎬 Demo — simulate which checkpoint you are at'; }
   var served=cpJobs(cfg.cp);                       // only vehicles whose route uses THIS checkpoint
   if (mainJob!=='all' && served.indexOf(mainJob)<0) mainJob=(served.length===1?served[0]:'all');
   var g1=document.getElementById('vehGrid1'), g2=document.getElementById('vehGrid2');
@@ -967,13 +973,25 @@ function buildVisits(events){
 function logTripTable(trips, title, dot){
   var h='<div class="jobhead" style="margin:6px 2px 6px"><span class="dot" style="background:'+dot+'"></span><span class="t">'+title+'</span></div>';
   if (!trips.length) return h+'<div class="muted-note" style="margin-bottom:8px">No trips / कोई ट्रिप नहीं</div>';
-  h+='<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Src IN</th><th>Src OUT</th><th>Dest IN</th><th>Dest OUT</th><th>Total</th><th></th></tr></thead><tbody>';
+  h+='<table class="dash"><thead><tr><th class="l">Vehicle</th><th>Src IN</th><th>Src OUT</th><th>Dest IN</th><th>Dest OUT</th><th>Trip time</th><th></th></tr></thead><tbody>';
   trips.forEach(function(t){
-    var total=(t.srcIn&&t.dstOut)?t.dstOut-t.srcIn:null;
+    // best available trip duration: full cycle (src IN→dest OUT) if both ends known;
+    // else a live running timer for an in-progress trip; else the leg this checkpoint measured.
+    var full=(t.srcIn&&t.dstOut)?t.dstOut-t.srcIn:null;
+    var loadDwell=(t.srcIn&&t.srcOut)?t.srcOut-t.srcIn:null;
+    var unloadDwell=(t.dstIn&&t.dstOut)?t.dstOut-t.dstIn:null;
+    var lastStamp=t.dstIn||t.srcOut||t.srcIn;
+    var running=(lastStamp && !t.dstOut)?(Date.now()-(t.srcIn||lastStamp)):null;   // still on the move
+    var shown, cls, tip;
+    if (full!=null){ shown=full; cls='color:var(--green);font-weight:700'; tip='full cycle'; }
+    else if (running!=null){ shown=running; cls='color:var(--orange,#ef6c00);font-weight:700'; tip='running'; }
+    else if (loadDwell!=null){ shown=loadDwell; cls='color:var(--blue);font-weight:600'; tip='loading'; }
+    else if (unloadDwell!=null){ shown=unloadDwell; cls='color:var(--purple,#7b1fa2);font-weight:600'; tip='unloading'; }
+    else { shown=null; cls=''; tip=''; }
     var ts=[t.srcIn,t.srcOut,t.dstIn,t.dstOut].filter(Boolean).join(',');
     h+='<tr><td class="l">'+t.veh+'</td>'
       +'<td>'+tfmt(t.srcIn)+'</td><td>'+tfmt(t.srcOut)+'</td><td>'+tfmt(t.dstIn)+'</td><td>'+tfmt(t.dstOut)+'</td>'
-      +'<td'+(total?' style="font-weight:700;color:var(--blue)"':'')+'>'+durfmt(total)+'</td>'
+      +'<td style="'+cls+'">'+durfmt(shown)+(tip&&shown!=null?('<br><span style="font-size:9px;font-weight:400;color:var(--muted)">'+(tip==='running'?'⏱ '+tip:tip)+'</span>'):'')+'</td>'
       +'<td>'+(canHardDelete()?('<span class="del" data-ts="'+ts+'">✕</span>'):'')+'</td></tr>';
   });
   return h+'</tbody></table>';
@@ -2461,7 +2479,11 @@ function logout(){
 /* =========================================================
    TICKERS + START
    ========================================================= */
-setInterval(function(){ if (cfg && cfg.role==='SUP' && !document.getElementById('pgMain').classList.contains('hidden')) renderMain(); }, 60000);
+setInterval(function(){
+  if (!cfg) return;
+  if ((cfg.role==='SUP'||cfg.role==='ADM') && !document.getElementById('pgMain').classList.contains('hidden')) renderMain();
+  if (!document.getElementById('pgLog').classList.contains('hidden')) renderLog();   // ticks the live trip timers
+}, 30000);
 // live shared state — every 20s pull other supervisors' taps so nobody double-logs a vehicle
 setInterval(function(){
   if (cfg && cfg.role==='SUP' && signedInUser() && !syncing){
@@ -2552,7 +2574,9 @@ function loginSample(role, name, extra){
   boot(true);                                   // straight in (skip lock); PIN 1234 if they test the lock
 }
 if (DEMO){ seedDemo(); boot(true); }
-else { initAuth(); initFirebase(); if (cfg) boot(); }
+// EXISTING user (already set up on this device) → go straight to login (PIN) for their saved role.
+// Only a brand-new user (no saved profile) sees the "create user" setup screen.
+else { initAuth(); initFirebase(); if (cfg && cfg.pinH) boot(); else showOnly('pgSetup'); }
 </script>
 </body>
 </html>
